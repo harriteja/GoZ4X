@@ -1,0 +1,78 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/harriteja/GoZ4X/bench
+cpu: Apple M4 Pro
+BenchmarkBlockCompress/Small_Random_Level1-14         	   34789	     33498 ns/op	  30.57 MB/s	         1.005 ratio	  533634 B/op	       3 allocs/op
+BenchmarkBlockCompress/Small_Random_Level6-14         	   36080	     33899 ns/op	  30.21 MB/s	         1.005 ratio	  533634 B/op	       3 allocs/op
+BenchmarkBlockCompress/Small_Random_Level9-14         	   34405	     35648 ns/op	  28.72 MB/s	         1.005 ratio	  533634 B/op	       3 allocs/op
+BenchmarkBlockCompress/Small_Mixed_Level1-14          	   44301	     25968 ns/op	  39.43 MB/s	         0.5078 ratio	  533632 B/op	       3 allocs/op
+BenchmarkBlockCompress/Small_Mixed_Level6-14          	   46304	     26941 ns/op	  38.01 MB/s	         0.5078 ratio	  533632 B/op	       3 allocs/op
+BenchmarkBlockCompress/Small_Mixed_Level9-14          	   44487	     25859 ns/op	  39.60 MB/s	         0.5078 ratio	  533632 B/op	       3 allocs/op
+BenchmarkBlockCompress/Small_Compressible_Level1-14   	   55442	     21001 ns/op	  48.76 MB/s	         0.1084 ratio	  533632 B/op	       3 allocs/op
+BenchmarkBlockCompress/Small_Compressible_Level6-14   	   58962	     21249 ns/op	  48.19 MB/s	         0.1084 ratio	  533632 B/op	       3 allocs/op
+BenchmarkBlockCompress/Small_Compressible_Level9-14   	   54300	     20926 ns/op	  48.93 MB/s	         0.1084 ratio	  533632 B/op	       3 allocs/op
+BenchmarkBlockCompress/Medium_Random_Level1-14        	    1622	    691724 ns/op	  94.74 MB/s	         1.004 ratio	 1122308 B/op	       3 allocs/op
+BenchmarkBlockCompress/Medium_Random_Level6-14        	    1488	    820630 ns/op	  79.86 MB/s	         1.004 ratio	 1122307 B/op	       3 allocs/op
+BenchmarkBlockCompress/Medium_Random_Level9-14        	    1149	   1011671 ns/op	  64.78 MB/s	         1.004 ratio	 1122306 B/op	       3 allocs/op
+BenchmarkBlockCompress/Medium_Mixed_Level1-14         	    4126	    296585 ns/op	 220.97 MB/s	         0.5040 ratio	 1122307 B/op	       3 allocs/op
+BenchmarkBlockCompress/Medium_Mixed_Level6-14         	    3727	    322876 ns/op	 202.98 MB/s	         0.5040 ratio	 1122307 B/op	       3 allocs/op
+BenchmarkBlockCompress/Medium_Mixed_Level9-14         	    3099	    386272 ns/op	 169.66 MB/s	         0.5040 ratio	 1122307 B/op	       3 allocs/op
+BenchmarkBlockCompress/Medium_Compressible_Level1-14  	   12120	    106752 ns/op	 613.91 MB/s	         0.1040 ratio	 1122307 B/op	       3 allocs/op
+BenchmarkBlockCompress/Medium_Compressible_Level6-14  	   10000	    110282 ns/op	 594.26 MB/s	         0.1040 ratio	 1122307 B/op	       3 allocs/op
+BenchmarkBlockCompress/Medium_Compressible_Level9-14  	   10000	    114358 ns/op	 573.08 MB/s	         0.1040 ratio	 1122307 B/op	       3 allocs/op
+BenchmarkBlockCompress/Large_Random_Level1-14         	      72	  15911316 ns/op	  65.90 MB/s	         1.004 ratio	 9969674 B/op	       3 allocs/op
+BenchmarkBlockCompress/Large_Random_Level6-14         	      78	  15902738 ns/op	  65.94 MB/s	         1.004 ratio	 9969671 B/op	       3 allocs/op
+BenchmarkBlockCompress/Large_Random_Level9-14         	      75	  15744867 ns/op	  66.60 MB/s	         1.004 ratio	 9969674 B/op	       3 allocs/op
+BenchmarkBlockCompress/Large_Mixed_Level1-14          	      78	  15299164 ns/op	  68.54 MB/s	         1.004 ratio	 9969672 B/op	       3 allocs/op
+BenchmarkBlockCompress/Large_Mixed_Level6-14          	      79	  15381074 ns/op	  68.17 MB/s	         1.004 ratio	 9969676 B/op	       3 allocs/op
+BenchmarkBlockCompress/Large_Mixed_Level9-14          	      76	  15927964 ns/op	  65.83 MB/s	         1.004 ratio	 9969672 B/op	       3 allocs/op
+BenchmarkBlockCompress/Large_Compressible_Level1-14   	      79	  15195523 ns/op	  69.01 MB/s	         1.004 ratio	 9969674 B/op	       3 allocs/op
+BenchmarkBlockCompress/Large_Compressible_Level6-14   	      80	  15142064 ns/op	  69.25 MB/s	         1.004 ratio	 9969670 B/op	       3 allocs/op
+BenchmarkBlockCompress/Large_Compressible_Level9-14   	      76	  15004069 ns/op	  69.89 MB/s	         1.004 ratio	 9969675 B/op	       3 allocs/op
+BenchmarkBlockDecompress/Small_Random-14              	94386926	        12.86 ns/op	79607.43 MB/s	       0 B/op	       0 allocs/op
+BenchmarkBlockDecompress/Small_Mixed-14               	 6755079	       171.5 ns/op	5971.00 MB/s	       0 B/op	       0 allocs/op
+BenchmarkBlockDecompress/Small_Compressible-14        	 4098598	       283.9 ns/op	3606.72 MB/s	       0 B/op	       0 allocs/op
+BenchmarkBlockDecompress/Medium_Random-14             	 1429707	       833.3 ns/op	78647.09 MB/s	       0 B/op	       0 allocs/op
+BenchmarkBlockDecompress/Medium_Mixed-14              	  117282	      9942 ns/op	6591.58 MB/s	       0 B/op	       0 allocs/op
+BenchmarkBlockDecompress/Medium_Compressible-14       	   71215	     17036 ns/op	3846.89 MB/s	       0 B/op	       0 allocs/op
+BenchmarkBlockDecompress/Large_Random-14              	   66040	     16573 ns/op	63268.32 MB/s	       0 B/op	       0 allocs/op
+BenchmarkBlockDecompress/Large_Mixed-14               	   64107	     18204 ns/op	57600.24 MB/s	       0 B/op	       0 allocs/op
+BenchmarkBlockDecompress/Large_Compressible-14        	   75040	     15074 ns/op	69562.60 MB/s	       0 B/op	       0 allocs/op
+BenchmarkStreamCompress/Small_Random_Level1-14        	    7107	    160741 ns/op	   6.37 MB/s	         1.015 ratio	 8955245 B/op	       9 allocs/op
+BenchmarkStreamCompress/Small_Random_Level6-14        	    7628	    168815 ns/op	   6.07 MB/s	         1.015 ratio	 8955244 B/op	       9 allocs/op
+BenchmarkStreamCompress/Small_Random_Level9-14        	    6366	    178655 ns/op	   5.73 MB/s	         1.015 ratio	 8955242 B/op	       9 allocs/op
+BenchmarkStreamCompress/Small_Mixed_Level1-14         	    6888	    164864 ns/op	   6.21 MB/s	         0.5225 ratio	 8954667 B/op	       8 allocs/op
+BenchmarkStreamCompress/Small_Mixed_Level6-14         	    6984	    175173 ns/op	   5.85 MB/s	         0.5225 ratio	 8954667 B/op	       8 allocs/op
+BenchmarkStreamCompress/Small_Mixed_Level9-14         	    7519	    165527 ns/op	   6.19 MB/s	         0.5225 ratio	 8954668 B/op	       8 allocs/op
+BenchmarkStreamCompress/Small_Compressible_Level1-14  	    7464	    160410 ns/op	   6.38 MB/s	         0.1230 ratio	 8954220 B/op	       8 allocs/op
+BenchmarkStreamCompress/Small_Compressible_Level6-14  	    7950	    156653 ns/op	   6.54 MB/s	         0.1230 ratio	 8954219 B/op	       8 allocs/op
+BenchmarkStreamCompress/Small_Compressible_Level9-14  	    8414	    153722 ns/op	   6.66 MB/s	         0.1230 ratio	 8954219 B/op	       8 allocs/op
+BenchmarkStreamCompress/Medium_Random_Level1-14       	    1484	    796633 ns/op	  82.27 MB/s	         1.000 ratio	 9543917 B/op	       9 allocs/op
+BenchmarkStreamCompress/Medium_Random_Level6-14       	    1339	    912531 ns/op	  71.82 MB/s	         1.000 ratio	 9543917 B/op	       9 allocs/op
+BenchmarkStreamCompress/Medium_Random_Level9-14       	    1074	   1165318 ns/op	  56.24 MB/s	         1.000 ratio	 9543914 B/op	       9 allocs/op
+BenchmarkStreamCompress/Medium_Mixed_Level1-14        	    2713	    416586 ns/op	 157.32 MB/s	         0.5042 ratio	 9511148 B/op	       8 allocs/op
+BenchmarkStreamCompress/Medium_Mixed_Level6-14        	    2594	    469476 ns/op	 139.59 MB/s	         0.5042 ratio	 9511146 B/op	       8 allocs/op
+BenchmarkStreamCompress/Medium_Mixed_Level9-14        	    2286	    555842 ns/op	 117.90 MB/s	         0.5042 ratio	 9511147 B/op	       8 allocs/op
+BenchmarkStreamCompress/Medium_Compressible_Level1-14 	    4023	    296643 ns/op	 220.93 MB/s	         0.1042 ratio	 9477100 B/op	       8 allocs/op
+BenchmarkStreamCompress/Medium_Compressible_Level6-14 	    3271	    404203 ns/op	 162.14 MB/s	         0.1042 ratio	 9477100 B/op	       8 allocs/op
+BenchmarkStreamCompress/Medium_Compressible_Level9-14 	    1992	    633015 ns/op	 103.53 MB/s	         0.1042 ratio	 9477101 B/op	       8 allocs/op
+BenchmarkStreamCompress/Large_Random_Level1-14        	      73	  17203889 ns/op	  60.95 MB/s	         1.000 ratio	18391276 B/op	       9 allocs/op
+BenchmarkStreamCompress/Large_Random_Level6-14        	      69	  17011935 ns/op	  61.64 MB/s	         1.000 ratio	18391276 B/op	       9 allocs/op
+BenchmarkStreamCompress/Large_Random_Level9-14        	      57	  19417213 ns/op	  54.00 MB/s	         1.000 ratio	18391271 B/op	       9 allocs/op
+BenchmarkStreamCompress/Large_Mixed_Level1-14         	      74	  17062310 ns/op	  61.46 MB/s	         1.000 ratio	18391278 B/op	       9 allocs/op
+BenchmarkStreamCompress/Large_Mixed_Level6-14         	      72	  16446295 ns/op	  63.76 MB/s	         1.000 ratio	18391274 B/op	       9 allocs/op
+BenchmarkStreamCompress/Large_Mixed_Level9-14         	      74	  16225447 ns/op	  64.63 MB/s	         1.000 ratio	18391273 B/op	       9 allocs/op
+BenchmarkStreamCompress/Large_Compressible_Level1-14  	      79	  16108035 ns/op	  65.10 MB/s	         1.000 ratio	18391276 B/op	       9 allocs/op
+BenchmarkStreamCompress/Large_Compressible_Level6-14  	      70	  15895520 ns/op	  65.97 MB/s	         1.000 ratio	18391276 B/op	       9 allocs/op
+BenchmarkStreamCompress/Large_Compressible_Level9-14  	      79	  15549879 ns/op	  67.43 MB/s	         1.000 ratio	18391270 B/op	       9 allocs/op
+BenchmarkStreamDecompress/Small_Random-14             	  550838	      2245 ns/op	 456.03 MB/s	   13024 B/op	      13 allocs/op
+BenchmarkStreamDecompress/Small_Mixed-14              	   15192	     80968 ns/op	  12.65 MB/s	 4206899 B/op	      14 allocs/op
+BenchmarkStreamDecompress/Small_Compressible-14       	   15090	     79916 ns/op	  12.81 MB/s	 4206434 B/op	      14 allocs/op
+BenchmarkStreamDecompress/Medium_Random-14            	   47070	     24985 ns/op	2623.01 MB/s	  335595 B/op	      19 allocs/op
+BenchmarkStreamDecompress/Medium_Mixed-14             	    9061	    118534 ns/op	 552.89 MB/s	 4505330 B/op	      20 allocs/op
+BenchmarkStreamDecompress/Medium_Compressible-14      	   10000	    123233 ns/op	 531.81 MB/s	 4471280 B/op	      20 allocs/op
+BenchmarkStreamDecompress/Large_Random-14             	    5684	    217456 ns/op	4822.01 MB/s	 5250814 B/op	      23 allocs/op
+BenchmarkStreamDecompress/Large_Mixed-14              	    5570	    220169 ns/op	4762.60 MB/s	 5250816 B/op	      23 allocs/op
+BenchmarkStreamDecompress/Large_Compressible-14       	    5468	    243155 ns/op	4312.38 MB/s	 5250818 B/op	      23 allocs/op
+PASS
+ok  	github.com/harriteja/GoZ4X/bench	142.658s

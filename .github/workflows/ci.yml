@@ -41,7 +41,7 @@ jobs:
       run: go test -v ./...
 
     - name: Build Example
-      run: go build -v ./examples/file_compressor.go
+      run: go build -v ./examples/file_compressor/file_compressor.go
 
   benchmark:
     name: Run Benchmarks
@@ -59,7 +59,7 @@ jobs:
       run: go test -bench=. -benchmem ./bench/...
 
     - name: Store Benchmark Results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: benchmark-results
         path: |

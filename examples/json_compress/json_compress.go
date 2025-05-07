@@ -8,7 +8,7 @@ import (
 	"github.com/harriteja/GoZ4X/compress"
 )
 
-func main2() {
+func main() {
 	// Create a simple JSON object
 	dataObject := map[string]interface{}{
 		"users": []map[string]interface{}{
