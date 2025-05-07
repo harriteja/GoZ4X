@@ -81,6 +81,27 @@ go get github.com/harriteja/GoZ4X
 - v0.4: SIMD optimizations where possible
 - v1.0: Stable release with optimized performance
 
+## Implementation Details
+
+GoZ4X implements the LZ4 compression algorithm according to the official specification:
+
+### Core Algorithm
+
+- **Sliding Window**: Uses a 64KB sliding window to find repeated byte sequences.
+- **Token Structure**: Each compressed sequence begins with a token byte:
+  - High 4 bits encode the length of literal data
+  - Low 4 bits encode the match length (minus 4)
+- **Length Encoding**: For lengths ≥ 15, additional bytes encode the extra length.
+- **Match Encoding**: Uses a 2-byte little-endian offset to point back into the sliding window.
+- **High Compression**: Implements HC mode with configurable depth search for better compression.
+
+### Optimizations
+
+- **Hash Tables**: Efficient hash lookup of 4-byte sequences for match finding.
+- **Chain Matching**: Tracks chains of positions with the same hash for comprehensive match finding.
+- **Parallel Compression**: Supports multi-threaded compression for large inputs.
+- **Streaming Mode**: Fully supports the standard LZ4 frame format.
+
 ## License
 
 MIT License 

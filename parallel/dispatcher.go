@@ -5,6 +5,8 @@ import (
 	"errors"
 	"runtime"
 	"sync"
+
+	"github.com/harriteja/GoZ4X/compress"
 )
 
 // DefaultChunkSize is the default size of chunks for parallel compression
@@ -134,16 +136,17 @@ func (d *Dispatcher) worker() {
 
 // compressBlock compresses a single block
 func (d *Dispatcher) compressBlock(job compressionJob) compressionResult {
-	// This is a placeholder. In the actual implementation, we would:
-	// 1. Create a compressor with the specified level
-	// 2. Compress the input block
-	// 3. Return the compressed data
+	// Create compressed buffer with safety margin
+	maxSize := len(job.input) + (len(job.input) / 255) + 16
+	compressedBuf := make([]byte, maxSize)
 
-	// For now, just create a dummy result
+	// Use the CompressBlockLevel function from the compress package
+	compressed, err := compress.CompressBlockLevel(job.input, compressedBuf, compress.CompressionLevel(job.level))
+
 	return compressionResult{
 		id:        job.id,
-		output:    job.input, // Just return the input for now
-		err:       nil,
+		output:    compressed,
+		err:       err,
 		inputSize: len(job.input),
 	}
 }
@@ -199,23 +202,26 @@ func (d *Dispatcher) CompressBlocks(input []byte, level int) ([]byte, error) {
 		d.runningJobs--
 	}
 
-	// Check for errors
+	// If any error occurred, return it
 	if err != nil {
 		return nil, err
 	}
 
-	// Calculate total output size
+	// Combine results
+	// First calculate total size
 	totalSize := 0
 	for _, result := range results {
 		totalSize += len(result.output)
 	}
 
-	// Combine results
+	// Allocate output buffer
 	output := make([]byte, totalSize)
-	offset := 0
-	for _, result := range results {
-		copy(output[offset:], result.output)
-		offset += len(result.output)
+
+	// Copy results in order
+	pos := 0
+	for i := 0; i < numChunks; i++ {
+		copy(output[pos:], results[i].output)
+		pos += len(results[i].output)
 	}
 
 	return output, nil
