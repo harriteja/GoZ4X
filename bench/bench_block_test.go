@@ -64,6 +64,11 @@ func generateData(size int, compressibility float64) []byte {
 func BenchmarkBlockCompress(b *testing.B) {
 	// For each test data size
 	for _, size := range benchSizes {
+		// Skip huge size as it exceeds MaxBlockSize (4MB)
+		if size == hugeSize {
+			continue
+		}
+
 		// For each compressibility level
 		for _, comp := range []float64{0.0, 0.5, 0.9} {
 			data := generateData(size, comp)
@@ -91,7 +96,7 @@ func BenchmarkBlockCompress(b *testing.B) {
 
 			// For each compression level
 			for _, level := range benchLevels {
-				b.Run(name+"_"+compStr+"_Level"+string('0'+int(level)), func(b *testing.B) {
+				b.Run(name+"_"+compStr+"_Level"+string(rune('0'+int(level))), func(b *testing.B) {
 					// Reset benchmark timer
 					b.ResetTimer()
 

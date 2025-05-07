@@ -91,10 +91,20 @@ func (hc *HCMatcher) hash4(pos int) uint32 {
 	return ((v * 2654435761) >> (32 - HashLog)) & HashMask
 }
 
-// InsertHash inserts the current position into the hash table
+// InsertHash inserts the current position at the given index into the hash table
+// and maintains the linked list in the chain table
 func (hc *HCMatcher) InsertHash(pos int) {
+	// Calculate hash for this position
 	h := hc.hash4(pos)
+	if h == 0 {
+		return // Position at end of buffer, can't hash properly
+	}
+
+	// Update chainTable to point to the previous occurrence of this hash
+	// Save current hash entry in chainTable
 	hc.chainTable[pos] = hc.hashTable[h]
+
+	// Update hash table to point to current position
 	hc.hashTable[h] = pos
 }
 
