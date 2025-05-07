@@ -1,0 +1,122 @@
+name: GoZ4X CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go-version: [1.21.x, 1.22.x, 1.24.x]
+
+    steps:
+    - name: Set up Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Check out code
+      uses: actions/checkout@v3
+
+    - name: Go Format
+      if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.24.x'
+      run: |
+        if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+          gofmt -s -l .
+          echo "Please run gofmt -s on the codebase"
+          exit 1
+        fi
+      shell: bash
+
+    - name: Go Vet
+      run: go vet ./...
+
+    - name: Go Test
+      run: go test -v ./...
+
+    - name: Build Example
+      run: go build -v ./examples/file_compressor.go
+
+  benchmark:
+    name: Run Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: 1.24.x
+
+    - name: Check out code
+      uses: actions/checkout@v3
+
+    - name: Run Benchmarks
+      run: go test -bench=. -benchmem ./bench/...
+
+    - name: Store Benchmark Results
+      uses: actions/upload-artifact@v3
+      with:
+        name: benchmark-results
+        path: |
+          bench/results.txt
+        retention-days: 90
+
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v2
+      with:
+        languages: go
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v2
+
+  release:
+    name: Release Binaries
+    runs-on: ubuntu-latest
+    needs: [build, benchmark]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    steps:
+    - name: Set up Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: 1.24.x
+
+    - name: Check out code
+      uses: actions/checkout@v3
+
+    - name: Create Release Build
+      run: make release
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Assets
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./build/
+        asset_name: goz4x-binaries.zip
+        asset_content_type: application/zip 
