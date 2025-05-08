@@ -117,4 +117,7 @@ help:
 	@echo "  check        - Run all quality checks (fmt, vet, test)"
 	@echo "  tidy         - Tidy go.mod and go.sum"
 	@echo "  release      - Build examples for all architectures"
-	@echo "  help         - Show this help message" 
+	@echo "  help         - Show this help message"
+
+local_test:
+	$(GO) test ./... -v

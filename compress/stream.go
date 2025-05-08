@@ -61,6 +61,9 @@ type Writer struct {
 	written     uint64
 	mu          sync.Mutex
 	wroteHeader bool
+	useV2       bool
+	buffer      []byte
+	bufferOff   int
 }
 
 // frameHeader contains information about the LZ4 frame
@@ -73,6 +76,16 @@ type frameHeader struct {
 	dictID            bool
 	dictIDValue       uint32 // Actual dictionary ID value
 	blockSizeCode     uint8  // 4-7 (64KB, 256KB, 1MB, 4MB)
+}
+
+// WriterOptions provides configuration options for a Writer
+type WriterOptions struct {
+	// Level sets the compression level
+	Level CompressionLevel
+	// UseV2 enables the improved v0.2 compression algorithm
+	UseV2 bool
+	// BlockSize sets the size of compression blocks
+	BlockSize int
 }
 
 // NewReader returns a new Reader that decompresses from r
@@ -628,5 +641,76 @@ func (z *Writer) Close() error {
 	}
 
 	z.closed = true
+	return nil
+}
+
+// NewWriterWithOptions creates a new Writer with custom options
+func NewWriterWithOptions(w io.Writer, options WriterOptions) *Writer {
+	writer := &Writer{
+		w:           w,
+		level:       options.Level,
+		useV2:       options.UseV2,
+		blockSize:   maxBlockSize,
+		closed:      false,
+		buf:         make([]byte, 0),
+		wroteHeader: false,
+	}
+
+	// Use specified block size if provided
+	if options.BlockSize > 0 {
+		writer.blockSize = options.BlockSize
+	}
+
+	// Allocate buffer
+	writer.buf = make([]byte, writer.blockSize)
+	writer.bufUsed = 0
+
+	return writer
+}
+
+// write compresses and writes a block of data
+func (w *Writer) write(block []byte) error {
+	var compressed []byte
+	var err error
+
+	if w.useV2 {
+		// Use v0.2 algorithm if enabled
+		compressed, err = CompressBlockV2Level(block, nil, w.level)
+	} else {
+		// Use original algorithm
+		compressed, err = CompressBlockLevel(block, nil, w.level)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	// Check if compression actually helped
+	if len(compressed) >= len(block) {
+		// Write uncompressed block with appropriate flag
+		// Block size (4 bytes)
+		binary.LittleEndian.PutUint32(w.buf[:4], uint32(len(block)|0x80000000))
+		if _, err := w.w.Write(w.buf[:4]); err != nil {
+			return err
+		}
+
+		// Write original data
+		if _, err := w.w.Write(block); err != nil {
+			return err
+		}
+	} else {
+		// Write compressed block
+		// Block size (4 bytes)
+		binary.LittleEndian.PutUint32(w.buf[:4], uint32(len(compressed)))
+		if _, err := w.w.Write(w.buf[:4]); err != nil {
+			return err
+		}
+
+		// Write compressed data
+		if _, err := w.w.Write(compressed); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
