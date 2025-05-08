@@ -18,7 +18,7 @@ A pure-Go, ultra-fast, high-compression LZ4 library for modern workloads—serve
 - HC (High Compression) match finding
 - Well tested with comprehensive unit tests
 
-### v0.2 Features (New!)
+### v0.2 Features
 
 - Improved block compression with better match finding
   - Dual hash tables (4-byte and 3-byte) for more match opportunities
@@ -29,18 +29,30 @@ A pure-Go, ultra-fast, high-compression LZ4 library for modern workloads—serve
 - Significantly better compression ratios (up to 15-20% improvement in some cases)
 - Maintained backward compatibility with v0.1
 
+### v0.3 Features (New!)
+
+- Parallel compression support
+  - Multi-threaded block compression to utilize all CPU cores
+  - Parallelized streaming API for high-throughput compression
+  - Automatic fallback to single-threaded mode when needed
+- Refined HC (Hash Chain) compression levels
+  - Enhanced hash functions for high compression levels (5-byte hash)
+  - Window size optimized per compression level
+  - Improved lazy matching with early exit strategies
+  - Optimized hash table sizes for better memory usage
+- Better compression ratios with faster compression on multi-core systems
+
 ## TODO features
 
 - Go generics for clean, reusable match-finder and streaming APIs
 - SIMD/assembly for match searching and copy loops (SSE4.1, AVX2, NEON)
-- Parallel block compression to saturate all cores
 - Pluggable backends (pure-Go, assembly, GPU) selected at runtime
 - First-class WASM support for browser & edge functions
 - Comprehensive benchmark suite
 
 ## Status
 
-This is version 0.2, with improved block compression and better match finding algorithms. The v0.2 implementation significantly improves compression ratio while maintaining compatibility with the original LZ4 format.
+This is version 0.3, with parallel compression capabilities and refined Hash Chain levels. The v0.3 implementation significantly improves compression performance on multi-core systems while maintaining compatibility with the LZ4 format.
 
 ## Usage
 
@@ -117,6 +129,56 @@ func main() {
 }
 ```
 
+### Parallel Compression with v0.3
+
+```go
+package main
+
+import (
+    "bytes"
+    "fmt"
+    "io"
+    "runtime"
+    
+    "github.com/harriteja/GoZ4X"
+)
+
+func main() {
+    // Create or load some large data
+    data := make([]byte, 100*1024*1024) // 100MB of data
+    // ... fill data with actual content ...
+    
+    fmt.Printf("CPU cores available: %d\n", runtime.NumCPU())
+    
+    // Parallel block compression
+    compressedData, _ := goz4x.CompressBlockV2Parallel(data, nil)
+    
+    fmt.Printf("Original size: %d bytes\n", len(data))
+    fmt.Printf("Compressed size: %d bytes (%.2f%%)\n", 
+        len(compressedData), float64(len(compressedData))*100/float64(len(data)))
+    
+    // Parallel streaming compression
+    var buf bytes.Buffer
+    w := goz4x.NewParallelWriterV2(&buf)
+    
+    // Optionally configure workers and chunk size
+    w.SetNumWorkers(runtime.NumCPU()) // Use all available cores
+    w.SetChunkSize(4 * 1024 * 1024)   // 4MB chunks
+    
+    // Compress
+    w.Write(data)
+    w.Close()
+    
+    fmt.Printf("Parallel streaming compressed size: %d bytes\n", buf.Len())
+    
+    // Decompress (standard decompression works with parallel-compressed data)
+    r := goz4x.NewReader(bytes.NewReader(buf.Bytes()))
+    decompressed, _ := io.ReadAll(r)
+    
+    fmt.Printf("Decompressed size: %d bytes\n", len(decompressed))
+}
+```
+
 ## Installation
 
 ```
@@ -127,7 +189,7 @@ go get github.com/harriteja/GoZ4X
 
 - v0.1: Pure-Go implementation with streaming API (completed)
 - v0.2: Improved block compression with proper match finding (completed)
-- v0.3: Parallelism + HC levels refinement
+- v0.3: Parallelism + HC levels refinement (completed)
 - v0.4: SIMD optimizations where possible
 - v1.0: Stable release with optimized performance
 
@@ -153,12 +215,21 @@ GoZ4X implements the LZ4 compression algorithm according to the official specifi
 - **Skip Strength**: Optimized skip strategy to improve compression speed at higher levels
 - **Hash Pre-initialization**: Better handling of the initial block for improved compression
 
+### v0.3 Optimizations
+
+- **Parallelism**: Multi-threaded compression for better performance on multi-core systems
+- **Worker Pool**: Dynamic worker allocation based on available CPU cores
+- **Chunk Processing**: Efficient chunking strategy for parallel compression
+- **Enhanced HC Levels**: Refined compression levels with optimized window sizes
+- **5-Byte Hashing**: Advanced hash function for higher compression levels
+- **Early Exit**: Smarter search termination for better performance
+
 ### TODO Optimizations
 
-- **Hash Tables**: Efficient hash lookup of 4-byte sequences for match finding.
-- **Chain Matching**: Tracks chains of positions with the same hash for comprehensive match finding.
-- **Parallel Compression**: Supports multi-threaded compression for large inputs.
-- **Streaming Mode**: Fully supports the standard LZ4 frame format.
+- **SIMD**: Vectorized implementations for match finding and copy operations
+- **Hash Tables**: Further optimizations of hash lookup strategies
+- **Chain Matching**: Advanced chain tracking for even better match finding
+- **Streaming Mode**: Additional optimizations for the standard LZ4 frame format
 
 ## License
 

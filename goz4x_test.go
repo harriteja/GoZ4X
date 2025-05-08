@@ -2,27 +2,53 @@ package goz4x
 
 import (
 	"bytes"
-	"crypto/rand"
+	cryptorand "crypto/rand"
 	"io"
+	"math/rand"
+	"runtime"
 	"testing"
+	"time"
 )
+
+func init() {
+	// Seed the random number generator
+	rand.Seed(time.Now().UnixNano())
+}
 
 // Helper functions for generating test data
 func generateRandomData(size int) []byte {
 	data := make([]byte, size)
-	rand.Read(data)
+	cryptorand.Read(data)
 	return data
 }
 
+// generateCompressibleData creates test data with good compression characteristics
 func generateCompressibleData(size int) []byte {
-	// Create data with a repeating pattern for high compressibility
+	// Create data with a repeating pattern and some variation
 	data := make([]byte, size)
-	pattern := []byte("abcdefghijklmnopqrstuvwxyz0123456789")
 
-	for i := 0; i < size; i += len(pattern) {
-		n := copy(data[i:], pattern)
-		if n < len(pattern) {
-			break
+	// Create a pattern that repeats but with some variation
+	patternSize := 4 * 1024 // 4KB pattern
+	pattern := make([]byte, patternSize)
+	for i := 0; i < patternSize; i++ {
+		pattern[i] = byte(rand.Intn(256))
+	}
+
+	// Fill the data with the pattern and some random variations
+	for i := 0; i < size; i += patternSize {
+		end := i + patternSize
+		if end > size {
+			end = size
+		}
+
+		// Copy the pattern
+		copy(data[i:end], pattern[:end-i])
+
+		// Add some random variations (15% of bytes get randomized)
+		for j := i; j < end; j++ {
+			if rand.Float32() < 0.15 {
+				data[j] = byte(rand.Intn(256))
+			}
 		}
 	}
 
@@ -599,4 +625,551 @@ func TestV2VsV1CompressionRatio(t *testing.T) {
 	if !bytes.Equal(v1Decompressed, input) || !bytes.Equal(v2Decompressed, input) {
 		t.Errorf("Decompression verification failed")
 	}
+}
+
+// TestVersion verifies the version constants
+func TestVersion(t *testing.T) {
+	if Version != "0.3.0" {
+		t.Errorf("Expected version to be 0.3.0, got %s", Version)
+	}
+
+	if VersionMajor != 0 {
+		t.Errorf("Expected VersionMajor to be 0, got %d", VersionMajor)
+	}
+
+	if VersionMinor != 3 {
+		t.Errorf("Expected VersionMinor to be 3, got %d", VersionMinor)
+	}
+
+	if VersionPatch != 0 {
+		t.Errorf("Expected VersionPatch to be 0, got %d", VersionPatch)
+	}
+}
+
+// TestParallelCompression tests the parallel compression API
+func TestParallelCompression(t *testing.T) {
+	// Skip for very small test runs
+	if testing.Short() {
+		t.Skip("Skipping parallel compression test in short mode")
+	}
+
+	// Generate test data
+	sizes := []int{
+		10 * 1024,   // 10KB
+		100 * 1024,  // 100KB
+		1024 * 1024, // 1MB
+	}
+
+	for _, size := range sizes {
+		t.Run(byteSizeToString(size), func(t *testing.T) {
+			testParallelCompression(t, generateCompressibleData(size))
+		})
+	}
+}
+
+// Helper function for testing parallel compression
+func testParallelCompression(t *testing.T, data []byte) {
+	// Test basic parallel compression
+	parallelCompressed, err := CompressBlockParallel(data, nil)
+	if err != nil {
+		t.Fatalf("CompressBlockParallel error: %v", err)
+	}
+
+	// Test parallel compression with level
+	for level := 1; level <= 12; level++ {
+		compressed, err := CompressBlockParallelLevel(data, nil, level)
+		if err != nil {
+			t.Fatalf("CompressBlockParallelLevel error at level %d: %v", level, err)
+		}
+
+		// Verify decompression
+		decompressed, err := DecompressBlock(compressed, nil, len(data))
+		if err != nil {
+			t.Fatalf("DecompressBlock error at level %d: %v", level, err)
+		}
+
+		if !bytes.Equal(data, decompressed) {
+			t.Fatalf("Decompressed data doesn't match original at level %d", level)
+		}
+	}
+
+	// Test V2 parallel compression
+	v2Compressed, err := CompressBlockV2Parallel(data, nil)
+	if err != nil {
+		t.Fatalf("CompressBlockV2Parallel error: %v", err)
+	}
+
+	// Test V2 parallel compression with level
+	for level := 1; level <= 12; level++ {
+		compressed, err := CompressBlockV2ParallelLevel(data, nil, level)
+		if err != nil {
+			t.Fatalf("CompressBlockV2ParallelLevel error at level %d: %v", level, err)
+		}
+
+		// Verify decompression
+		decompressed, err := DecompressBlock(compressed, nil, len(data))
+		if err != nil {
+			t.Fatalf("DecompressBlock error at level %d: %v", level, err)
+		}
+
+		if !bytes.Equal(data, decompressed) {
+			t.Fatalf("Decompressed data doesn't match original at level %d", level)
+		}
+	}
+
+	// Verify original parallel compression
+	decompressed, err := DecompressBlock(parallelCompressed, nil, len(data))
+	if err != nil {
+		t.Fatalf("DecompressBlock error: %v", err)
+	}
+
+	if !bytes.Equal(data, decompressed) {
+		t.Fatalf("Decompressed data doesn't match original for parallel compression")
+	}
+
+	// Verify V2 parallel compression
+	decompressedV2, err := DecompressBlock(v2Compressed, nil, len(data))
+	if err != nil {
+		t.Fatalf("DecompressBlock error: %v", err)
+	}
+
+	if !bytes.Equal(data, decompressedV2) {
+		t.Fatalf("Decompressed data doesn't match original for V2 parallel compression")
+	}
+}
+
+// TestParallelWriter tests the parallel writer API
+func TestParallelWriter(t *testing.T) {
+	// Skip for very small test runs
+	if testing.Short() {
+		t.Skip("Skipping parallel writer test in short mode")
+	}
+
+	// Generate test data
+	sizes := []int{
+		10 * 1024,   // 10KB
+		100 * 1024,  // 100KB
+		1024 * 1024, // 1MB
+	}
+
+	for _, size := range sizes {
+		t.Run(byteSizeToString(size), func(t *testing.T) {
+			testParallelWriter(t, generateCompressibleData(size))
+		})
+	}
+}
+
+// Helper function for testing parallel writer
+func testParallelWriter(t *testing.T, data []byte) {
+	// Test all writer configurations
+	testParallelWriterConfig(t, data, func() *ParallelWriter {
+		return NewParallelWriter(bytes.NewBuffer(nil))
+	})
+
+	// Test with specific level
+	testParallelWriterConfig(t, data, func() *ParallelWriter {
+		return NewParallelWriterLevel(bytes.NewBuffer(nil), 6)
+	})
+
+	// Test with V2 algorithm
+	testParallelWriterConfig(t, data, func() *ParallelWriter {
+		return NewParallelWriterV2(bytes.NewBuffer(nil))
+	})
+
+	// Test with V2 and specific level
+	testParallelWriterConfig(t, data, func() *ParallelWriter {
+		return NewParallelWriterV2Level(bytes.NewBuffer(nil), 9)
+	})
+
+	// Test with custom settings
+	testParallelWriterConfig(t, data, func() *ParallelWriter {
+		pw := NewParallelWriter(bytes.NewBuffer(nil))
+		pw.SetNumWorkers(runtime.NumCPU())
+		pw.SetChunkSize(64 * 1024)
+		return pw
+	})
+}
+
+// Test helper for specific ParallelWriter configuration
+func testParallelWriterConfig(t *testing.T, data []byte, createWriter func() *ParallelWriter) {
+	var buf bytes.Buffer
+	pw := createWriter()
+
+	// Set buffer as output
+	pw.Reset(&buf)
+
+	// Write data in chunks to test multiple writes
+	chunkSize := 1024
+	for i := 0; i < len(data); i += chunkSize {
+		end := i + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		n, err := pw.Write(data[i:end])
+		if err != nil {
+			t.Fatalf("Write error: %v", err)
+		}
+		if n != end-i {
+			t.Fatalf("Wrong number of bytes written: %d, expected: %d", n, end-i)
+		}
+	}
+
+	// Close the writer
+	if err := pw.Close(); err != nil {
+		t.Fatalf("Close error: %v", err)
+	}
+
+	// Decompress the data
+	r := NewReader(bytes.NewReader(buf.Bytes()))
+	decompressed := bytes.NewBuffer(nil)
+	if _, err := io.Copy(decompressed, r); err != nil {
+		t.Fatalf("Decompress error: %v", err)
+	}
+
+	// Verify the decompressed data
+	if !bytes.Equal(data, decompressed.Bytes()) {
+		t.Fatalf("Decompressed data doesn't match original data")
+	}
+}
+
+// TestVersionComparison tests and compares all version's compression
+func TestVersionComparison(t *testing.T) {
+	// Skip for very small test runs
+	if testing.Short() {
+		t.Skip("Skipping version comparison test in short mode")
+	}
+
+	// Generate test data with different compressibility
+	sizes := []int{
+		100 * 1024,  // 100KB
+		1024 * 1024, // 1MB
+	}
+
+	compressibilities := []float64{
+		0.3, // Low compressibility
+		0.7, // Medium compressibility
+		0.9, // High compressibility
+	}
+
+	for _, size := range sizes {
+		for _, comp := range compressibilities {
+			t.Run(byteSizeToString(size)+"-Comp"+string(rune('0'+int(comp*10))), func(t *testing.T) {
+				testVersionCompression(t, size, comp)
+			})
+		}
+	}
+}
+
+// Helper function for testing version comparison
+func testVersionCompression(t *testing.T, size int, compressibility float64) {
+	// Generate data with the specified compressibility
+	data := generateDataWithCompressibility(size, compressibility)
+
+	// Compress with each version
+	v1Compressed, _ := CompressBlock(data, nil)
+	v2Compressed, _ := CompressBlockV2(data, nil)
+	v3Compressed, _ := CompressBlockParallel(data, nil)
+	v3v2Compressed, _ := CompressBlockV2Parallel(data, nil)
+
+	// Check compression ratios
+	v1Ratio := float64(len(data)) / float64(len(v1Compressed))
+	v2Ratio := float64(len(data)) / float64(len(v2Compressed))
+	v3Ratio := float64(len(data)) / float64(len(v3Compressed))
+	v3v2Ratio := float64(len(data)) / float64(len(v3v2Compressed))
+
+	// Log results
+	t.Logf("Data size: %d, Compressibility: %.1f", size, compressibility)
+	t.Logf("v0.1: %d bytes (%.2fx ratio)", len(v1Compressed), v1Ratio)
+	t.Logf("v0.2: %d bytes (%.2fx ratio)", len(v2Compressed), v2Ratio)
+	t.Logf("v0.3: %d bytes (%.2fx ratio)", len(v3Compressed), v3Ratio)
+	t.Logf("v0.3-V2: %d bytes (%.2fx ratio)", len(v3v2Compressed), v3v2Ratio)
+
+	// Verify all decompress properly
+	// v0.1
+	decompressedV1, err := DecompressBlock(v1Compressed, nil, len(data))
+	if err != nil || !bytes.Equal(data, decompressedV1) {
+		t.Fatalf("v0.1 decompression failed: %v", err)
+	}
+
+	// v0.2
+	decompressedV2, err := DecompressBlock(v2Compressed, nil, len(data))
+	if err != nil || !bytes.Equal(data, decompressedV2) {
+		t.Fatalf("v0.2 decompression failed: %v", err)
+	}
+
+	// v0.3
+	decompressedV3, err := DecompressBlock(v3Compressed, nil, len(data))
+	if err != nil || !bytes.Equal(data, decompressedV3) {
+		t.Fatalf("v0.3 decompression failed: %v", err)
+	}
+
+	// v0.3-V2
+	decompressedV3V2, err := DecompressBlock(v3v2Compressed, nil, len(data))
+	if err != nil || !bytes.Equal(data, decompressedV3V2) {
+		t.Fatalf("v0.3-V2 decompression failed: %v", err)
+	}
+
+	// Basic expectations
+	// v0.2 should be better than v0.1
+	if len(v2Compressed) > len(v1Compressed) {
+		t.Logf("Warning: v0.2 compression worse than v0.1")
+	}
+
+	// v0.3-V2 should be comparable to v0.2 (same algorithm, just parallel)
+	ratio := float64(len(v3v2Compressed)) / float64(len(v2Compressed))
+	if ratio > 1.05 {
+		t.Logf("Warning: v0.3-V2 compression significantly worse than v0.2 (ratio: %.2f)", ratio)
+	}
+}
+
+// Test streaming with different writers for comparison
+func TestStreamingWriters(t *testing.T) {
+	// Skip for very small test runs
+	if testing.Short() {
+		t.Skip("Skipping streaming writers test in short mode")
+	}
+
+	// Generate data
+	data := generateCompressibleData(1024 * 1024) // 1MB
+
+	// Compress with each writer type
+	writers := []struct {
+		name   string
+		create func(io.Writer) io.WriteCloser
+	}{
+		{"v0.1", func(w io.Writer) io.WriteCloser { return NewWriter(w) }},
+		{"v0.2", func(w io.Writer) io.WriteCloser { return NewWriterV2(w) }},
+		{"v0.3", func(w io.Writer) io.WriteCloser { return NewParallelWriter(w) }},
+		{"v0.3-V2", func(w io.Writer) io.WriteCloser { return NewParallelWriterV2(w) }},
+	}
+
+	// Collect results
+	results := make(map[string][]byte)
+
+	for _, w := range writers {
+		t.Run(w.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			writer := w.create(&buf)
+
+			// Write data
+			n, err := writer.Write(data)
+			if err != nil {
+				t.Fatalf("Write error: %v", err)
+			}
+			if n != len(data) {
+				t.Fatalf("Wrong number of bytes written: %d, expected: %d", n, len(data))
+			}
+
+			// Close writer
+			if err := writer.Close(); err != nil {
+				t.Fatalf("Close error: %v", err)
+			}
+
+			// Store compressed data
+			results[w.name] = buf.Bytes()
+
+			// Verify decompression
+			r := NewReader(bytes.NewReader(buf.Bytes()))
+			decompressed := bytes.NewBuffer(nil)
+			if _, err := io.Copy(decompressed, r); err != nil {
+				t.Fatalf("Decompress error: %v", err)
+			}
+
+			if !bytes.Equal(data, decompressed.Bytes()) {
+				t.Fatalf("Decompressed data doesn't match original")
+			}
+
+			// Log compression ratio
+			ratio := float64(len(data)) / float64(buf.Len())
+			t.Logf("%s: %d bytes compressed to %d bytes (%.2fx ratio)",
+				w.name, len(data), buf.Len(), ratio)
+		})
+	}
+
+	// Compare results
+	if len(results["v0.2"]) > len(results["v0.1"]) {
+		t.Logf("Warning: v0.2 writer produced larger output than v0.1")
+	}
+
+	// v0.3 and v0.3-V2 should be comparable to their non-parallel counterparts
+	v3Ratio := float64(len(results["v0.3"])) / float64(len(results["v0.1"]))
+	if v3Ratio > 1.05 {
+		t.Logf("Warning: v0.3 writer significantly worse than v0.1 (ratio: %.2f)", v3Ratio)
+	}
+
+	v3v2Ratio := float64(len(results["v0.3-V2"])) / float64(len(results["v0.2"]))
+	if v3v2Ratio > 1.05 {
+		t.Logf("Warning: v0.3-V2 writer significantly worse than v0.2 (ratio: %.2f)", v3v2Ratio)
+	}
+}
+
+// Helper function to generate data with specified compressibility
+func generateDataWithCompressibility(size int, compressibility float64) []byte {
+	data := make([]byte, size)
+
+	// Create several patterns to use
+	patternCount := 5
+	patterns := make([][]byte, patternCount)
+	patternSize := 256
+	for i := 0; i < patternCount; i++ {
+		patterns[i] = make([]byte, patternSize)
+		for j := 0; j < patternSize; j++ {
+			patterns[i][j] = byte(rand.Intn(256))
+		}
+	}
+
+	// Fill data with patterns and randomness based on compressibility
+	pos := 0
+	for pos < size {
+		if rand.Float64() < compressibility {
+			// Use a pattern (compressible part)
+			pattern := patterns[rand.Intn(patternCount)]
+			repeatLength := rand.Intn(1024) + 64
+			for i := 0; i < repeatLength && pos < size; i++ {
+				data[pos] = pattern[i%len(pattern)]
+				pos++
+			}
+		} else {
+			// Use random data (incompressible part)
+			randomLength := rand.Intn(64) + 16
+			for i := 0; i < randomLength && pos < size; i++ {
+				data[pos] = byte(rand.Intn(256))
+				pos++
+			}
+		}
+	}
+
+	return data
+}
+
+// Helper function to convert byte size to string
+func byteSizeToString(size int) string {
+	if size < 1024 {
+		return string(rune('0'+size)) + "B"
+	} else if size < 1024*1024 {
+		return string(rune('0'+size/1024)) + "KB"
+	} else if size < 1024*1024*1024 {
+		return string(rune('0'+size/(1024*1024))) + "MB"
+	}
+	return string(rune('0'+size/(1024*1024*1024))) + "GB"
+}
+
+// Benchmark compression function performance
+func BenchmarkCompressionFunctions(b *testing.B) {
+	// Generate test data
+	data := generateCompressibleData(1024 * 1024) // 1MB
+
+	b.Run("v0.1", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			compressed, _ := CompressBlock(data, nil)
+			b.SetBytes(int64(len(data)))
+			// Prevent compiler optimization
+			if len(compressed) == 0 {
+				b.Fatal("Compression failed")
+			}
+		}
+	})
+
+	b.Run("v0.2", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			compressed, _ := CompressBlockV2(data, nil)
+			b.SetBytes(int64(len(data)))
+			// Prevent compiler optimization
+			if len(compressed) == 0 {
+				b.Fatal("Compression failed")
+			}
+		}
+	})
+
+	b.Run("v0.3-Parallel", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			compressed, _ := CompressBlockParallel(data, nil)
+			b.SetBytes(int64(len(data)))
+			// Prevent compiler optimization
+			if len(compressed) == 0 {
+				b.Fatal("Compression failed")
+			}
+		}
+	})
+
+	b.Run("v0.3-V2Parallel", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			compressed, _ := CompressBlockV2Parallel(data, nil)
+			b.SetBytes(int64(len(data)))
+			// Prevent compiler optimization
+			if len(compressed) == 0 {
+				b.Fatal("Compression failed")
+			}
+		}
+	})
+}
+
+// Benchmark streaming writer performance
+func BenchmarkStreamingWriters(b *testing.B) {
+	// Generate test data
+	data := generateCompressibleData(1024 * 1024) // 1MB
+
+	b.Run("Writer", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			buf := bytes.NewBuffer(nil)
+			w := NewWriter(buf)
+			w.Write(data)
+			w.Close()
+			b.SetBytes(int64(len(data)))
+			// Prevent compiler optimization
+			if buf.Len() == 0 {
+				b.Fatal("Compression failed")
+			}
+		}
+	})
+
+	b.Run("WriterV2", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			buf := bytes.NewBuffer(nil)
+			w := NewWriterV2(buf)
+			w.Write(data)
+			w.Close()
+			b.SetBytes(int64(len(data)))
+			// Prevent compiler optimization
+			if buf.Len() == 0 {
+				b.Fatal("Compression failed")
+			}
+		}
+	})
+
+	b.Run("ParallelWriter", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			buf := bytes.NewBuffer(nil)
+			w := NewParallelWriter(buf)
+			w.Write(data)
+			w.Close()
+			b.SetBytes(int64(len(data)))
+			// Prevent compiler optimization
+			if buf.Len() == 0 {
+				b.Fatal("Compression failed")
+			}
+		}
+	})
+
+	b.Run("ParallelWriterV2", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			buf := bytes.NewBuffer(nil)
+			w := NewParallelWriterV2(buf)
+			w.Write(data)
+			w.Close()
+			b.SetBytes(int64(len(data)))
+			// Prevent compiler optimization
+			if buf.Len() == 0 {
+				b.Fatal("Compression failed")
+			}
+		}
+	})
 }

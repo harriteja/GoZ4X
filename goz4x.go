@@ -5,16 +5,17 @@ import (
 	"io"
 
 	"github.com/harriteja/GoZ4X/compress"
+	v03 "github.com/harriteja/GoZ4X/v03"
 )
 
 // Version constants
 const (
 	// Version of the library
-	Version = "0.2.0"
+	Version = "0.3.0"
 	// VersionMajor is the major version number
 	VersionMajor = 0
 	// VersionMinor is the minor version number
-	VersionMinor = 2
+	VersionMinor = 3
 	// VersionPatch is the patch version number
 	VersionPatch = 0
 )
@@ -52,6 +53,32 @@ func CompressBlockV2(src []byte, dst []byte) ([]byte, error) {
 // It offers better compression ratios than CompressBlockLevel.
 func CompressBlockV2Level(src []byte, dst []byte, level int) ([]byte, error) {
 	return compress.CompressBlockV2Level(src, dst, compress.CompressionLevel(level))
+}
+
+// V3 API functions with parallel compression
+
+// CompressBlockParallel compresses a byte slice using multiple goroutines with default compression level.
+// This provides better performance on multicore systems for large inputs.
+func CompressBlockParallel(src []byte, dst []byte) ([]byte, error) {
+	return v03.CompressBlockParallel(src, dst)
+}
+
+// CompressBlockParallelLevel compresses a byte slice using multiple goroutines with the specified level.
+// This provides better performance on multicore systems for large inputs.
+func CompressBlockParallelLevel(src []byte, dst []byte, level int) ([]byte, error) {
+	return v03.CompressBlockParallelLevel(src, dst, level)
+}
+
+// CompressBlockV2Parallel compresses a byte slice using v0.2 algorithm with multiple goroutines.
+// This provides better compression ratio and better performance on multicore systems.
+func CompressBlockV2Parallel(src []byte, dst []byte) ([]byte, error) {
+	return v03.CompressBlockV2Parallel(src, dst)
+}
+
+// CompressBlockV2ParallelLevel compresses a byte slice using v0.2 algorithm and multiple goroutines.
+// This provides better compression ratio and better performance on multicore systems.
+func CompressBlockV2ParallelLevel(src []byte, dst []byte, level int) ([]byte, error) {
+	return v03.CompressBlockV2ParallelLevel(src, dst, level)
 }
 
 // Reader is an io.Reader that decompresses data from an LZ4 stream.
@@ -103,6 +130,37 @@ func NewWriterV2Level(w io.Writer, level int) *Writer {
 	})}
 }
 
+// ParallelWriter is an io.WriteCloser that compresses data in parallel for better performance.
+type ParallelWriter struct {
+	w *v03.ParallelWriter
+}
+
+// NewParallelWriter creates a new parallel writer with default options.
+func NewParallelWriter(w io.Writer) *ParallelWriter {
+	return &ParallelWriter{w: v03.NewParallelWriter(w)}
+}
+
+// NewParallelWriterLevel creates a new parallel writer with custom compression level.
+func NewParallelWriterLevel(w io.Writer, level int) *ParallelWriter {
+	return &ParallelWriter{w: v03.NewParallelWriterLevel(w, level)}
+}
+
+// NewParallelWriterV2 creates a new parallel writer using v0.2 algorithm with default options.
+func NewParallelWriterV2(w io.Writer) *ParallelWriter {
+	return &ParallelWriter{w: v03.NewParallelWriterWithOptions(w, v03.ParallelWriterOptions{
+		Level: int(compress.DefaultLevel),
+		UseV2: true,
+	})}
+}
+
+// NewParallelWriterV2Level creates a new parallel writer using v0.2 algorithm with custom level.
+func NewParallelWriterV2Level(w io.Writer, level int) *ParallelWriter {
+	return &ParallelWriter{w: v03.NewParallelWriterWithOptions(w, v03.ParallelWriterOptions{
+		Level: level,
+		UseV2: true,
+	})}
+}
+
 // Write implements io.Writer.
 func (w *Writer) Write(p []byte) (int, error) {
 	return w.w.Write(p)
@@ -116,4 +174,31 @@ func (w *Writer) Close() error {
 // Reset resets the Writer to write to dst.
 func (w *Writer) Reset(dst io.Writer) {
 	w.w.Reset(dst)
+}
+
+// Write implements io.Writer.
+func (pw *ParallelWriter) Write(p []byte) (int, error) {
+	return pw.w.Write(p)
+}
+
+// Close implements io.Closer.
+func (pw *ParallelWriter) Close() error {
+	return pw.w.Close()
+}
+
+// Reset resets the ParallelWriter to write to dst.
+func (pw *ParallelWriter) Reset(dst io.Writer) {
+	pw.w.Reset(dst)
+}
+
+// SetNumWorkers sets the number of worker goroutines used for compression.
+// A value of 0 means use GOMAXPROCS.
+func (pw *ParallelWriter) SetNumWorkers(n int) {
+	pw.w.SetNumWorkers(n)
+}
+
+// SetChunkSize sets the chunk size used for parallel compression.
+// A value of 0 means use default chunk size.
+func (pw *ParallelWriter) SetChunkSize(size int) {
+	pw.w.SetChunkSize(size)
 }

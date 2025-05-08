@@ -15,6 +15,13 @@ const (
 	HashTableSize = 1 << HashLog
 	// HashMask is used to mask hash values
 	HashMask = HashTableSize - 1
+
+	// HashLogHC is for high compression levels (9-12)
+	HashLogHC = 17
+	// HashTableSizeHC is the size of high compression hash table
+	HashTableSizeHC = 1 << HashLogHC
+	// HashMaskHC is used to mask high compression hash values
+	HashMaskHC = HashTableSizeHC - 1
 )
 
 // HCMatcher implements a high-compression match finder for LZ4HC
@@ -37,28 +44,53 @@ type HCMatcher struct {
 
 	// End of buffer
 	end int
+
+	// Hash table size (may vary by level)
+	hashLog       int
+	hashSize      int
+	hashMask      int
+	useEnhancedHC bool
 }
 
 // NewHCMatcher creates a new high-compression matcher
 func NewHCMatcher(level CompressionLevel) *HCMatcher {
 	// Determine search parameters based on level
 	maxAttempts := 0
+	hashLog := HashLog
+	windowSize := MaxDistance
+	useEnhancedHC := false
+
+	// Improved HC levels for v0.3
 	switch {
 	case level <= 3:
 		maxAttempts = 4
+		windowSize = 16 * 1024 // 16KB window for lowest levels
 	case level <= 6:
 		maxAttempts = 8
+		windowSize = 32 * 1024 // 32KB window for medium levels
 	case level <= 9:
 		maxAttempts = 16
+		windowSize = 64 * 1024 // 64KB window for high levels
+		useEnhancedHC = true
 	default:
 		maxAttempts = 32
+		windowSize = MaxDistance
+		hashLog = HashLogHC // Use larger hash table for highest levels
+		useEnhancedHC = true
 	}
 
+	hashSize := 1 << hashLog
+	hashMask := hashSize - 1
+
 	return &HCMatcher{
-		hashTable:   make([]int, HashTableSize),
-		chainTable:  nil, // Lazily initialized
-		maxAttempts: maxAttempts,
-		windowSize:  MaxDistance,
+		hashTable:     make([]int, hashSize),
+		chainTable:    nil, // Lazily initialized
+		maxAttempts:   maxAttempts,
+		windowSize:    windowSize,
+		hashLog:       hashLog,
+		hashSize:      hashSize,
+		hashMask:      hashMask,
+		useEnhancedHC: useEnhancedHC,
 	}
 }
 
@@ -88,14 +120,31 @@ func (hc *HCMatcher) hash4(pos int) uint32 {
 	}
 
 	v := uint32(hc.buf[pos]) | uint32(hc.buf[pos+1])<<8 | uint32(hc.buf[pos+2])<<16 | uint32(hc.buf[pos+3])<<24
-	return ((v * 2654435761) >> (32 - HashLog)) & HashMask
+	return ((v * 2654435761) >> (32 - hc.hashLog)) & uint32(hc.hashMask)
+}
+
+// hash5 computes a 5-byte hash for enhanced compression levels
+func (hc *HCMatcher) hash5(pos int) uint32 {
+	if pos+5 > hc.end {
+		return 0
+	}
+
+	v := uint32(hc.buf[pos]) | uint32(hc.buf[pos+1])<<8 | uint32(hc.buf[pos+2])<<16 | uint32(hc.buf[pos+3])<<24
+	v = v*2654435761 + uint32(hc.buf[pos+4])
+	return ((v * 2654435761) >> (32 - hc.hashLog)) & uint32(hc.hashMask)
 }
 
 // InsertHash inserts the current position at the given index into the hash table
 // and maintains the linked list in the chain table
 func (hc *HCMatcher) InsertHash(pos int) {
 	// Calculate hash for this position
-	h := hc.hash4(pos)
+	var h uint32
+	if hc.useEnhancedHC {
+		h = hc.hash5(pos)
+	} else {
+		h = hc.hash4(pos)
+	}
+
 	if h == 0 {
 		return // Position at end of buffer, can't hash properly
 	}
@@ -114,7 +163,14 @@ func (hc *HCMatcher) FindBestMatch() (offset, length int) {
 		return 0, 0
 	}
 
-	h := hc.hash4(hc.pos)
+	// Calculate hash
+	var h uint32
+	if hc.useEnhancedHC {
+		h = hc.hash5(hc.pos)
+	} else {
+		h = hc.hash4(hc.pos)
+	}
+
 	current := hc.hashTable[h]
 
 	// No match
@@ -129,6 +185,7 @@ func (hc *HCMatcher) FindBestMatch() (offset, length int) {
 	limit := hc.pos - hc.windowSize
 	attempts := hc.maxAttempts
 
+	// Enhanced search algorithm for v0.3
 	for current > limit && attempts > 0 {
 		attempts--
 
@@ -136,9 +193,17 @@ func (hc *HCMatcher) FindBestMatch() (offset, length int) {
 		length := 0
 		maxLength := hc.end - hc.pos
 
-		// Compare bytes
-		for length < maxLength && hc.buf[hc.pos+length] == hc.buf[current+length] {
-			length++
+		// Quickly check if the first 4 bytes match to filter bad matches
+		if hc.buf[current] == hc.buf[hc.pos] &&
+			hc.buf[current+1] == hc.buf[hc.pos+1] &&
+			hc.buf[current+2] == hc.buf[hc.pos+2] &&
+			hc.buf[current+3] == hc.buf[hc.pos+3] {
+
+			// Compare bytes starting from 4th position (we already checked first 4)
+			length = 4
+			for length < maxLength && hc.buf[hc.pos+length] == hc.buf[current+length] {
+				length++
+			}
 		}
 
 		// Update best match
@@ -148,6 +213,11 @@ func (hc *HCMatcher) FindBestMatch() (offset, length int) {
 
 			// Early exit if we found a "good enough" match
 			if length >= MaxMatch {
+				break
+			}
+
+			// Early exit strategy for higher levels
+			if hc.useEnhancedHC && length >= 64 {
 				break
 			}
 		}
@@ -181,6 +251,12 @@ func (hc *HCMatcher) LazyMatch(offset, length int) (newOffset, newLength int, ad
 		return offset, length, 1
 	}
 
+	// Enhanced lazy evaluation for v0.3
+	// If we already have a good long match, don't bother with lazy matching
+	if hc.useEnhancedHC && length >= 32 {
+		return offset, length, 1
+	}
+
 	// Save current position
 	currentPos := hc.pos
 
@@ -191,9 +267,17 @@ func (hc *HCMatcher) LazyMatch(offset, length int) (newOffset, newLength int, ad
 	// Restore position
 	hc.pos = currentPos
 
-	// If next position gives better compression, use it
-	if nextLength > length+1 {
-		return nextOffset, nextLength, 2 // Skip current and use next
+	// For high compression levels, use a more aggressive lazy matching strategy
+	if hc.useEnhancedHC {
+		// If next position gives better compression, use it
+		if nextLength > length {
+			return nextOffset, nextLength, 2 // Skip current and use next
+		}
+	} else {
+		// Standard strategy: next must be better by at least 2 bytes to be worth it
+		if nextLength > length+1 {
+			return nextOffset, nextLength, 2 // Skip current and use next
+		}
 	}
 
 	// Otherwise use current match

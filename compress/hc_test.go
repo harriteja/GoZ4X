@@ -2,7 +2,9 @@ package compress
 
 import (
 	"bytes"
+	"math/rand"
 	"testing"
+	"time"
 )
 
 // Test creating a new HCMatcher with different compression levels
@@ -30,8 +32,14 @@ func TestNewHCMatcher(t *testing.T) {
 				t.Errorf("hashTable is nil")
 			}
 
-			if len(matcher.hashTable) != HashTableSize {
-				t.Errorf("hashTable size = %v, want %v", len(matcher.hashTable), HashTableSize)
+			// Check hash table size based on level
+			expectedSize := HashTableSize
+			if tt.level > 9 {
+				expectedSize = HashTableSizeHC
+			}
+
+			if len(matcher.hashTable) != expectedSize {
+				t.Errorf("hashTable size = %v, want %v", len(matcher.hashTable), expectedSize)
 			}
 
 			// Check that maxAttempts is set based on level
@@ -314,7 +322,7 @@ func TestHCMatcherLazyMatch(t *testing.T) {
 	offset1, length1 := matcher.FindBestMatch()
 
 	// Now use lazy matching to see if next position is better
-	newOffset, newLength, advance := matcher.LazyMatch(offset1, length1)
+	_, newLength, advance := matcher.LazyMatch(offset1, length1)
 
 	if advance <= 0 {
 		t.Errorf("LazyMatch advance = %v, want > 0", advance)
@@ -323,15 +331,15 @@ func TestHCMatcherLazyMatch(t *testing.T) {
 	// In our contrived example, we expect the new match to be better
 	// But this depends on the exact data pattern and hash collisions
 	t.Logf("Original match: offset=%v, length=%v", offset1, length1)
-	t.Logf("Lazy match: offset=%v, length=%v, advance=%v", newOffset, newLength, advance)
+	t.Logf("Lazy match: length=%v, advance=%v", newLength, advance)
 
 	// Test the case where the current match is very short (should try lazy)
-	shortOffset, shortLength, advance := matcher.LazyMatch(10, 1)
+	_, shortLength, advance := matcher.LazyMatch(10, 1)
 	if advance <= 0 {
 		t.Errorf("LazyMatch advance for short match = %v, want > 0", advance)
 	}
-	t.Logf("Lazy match for short match: offset=%v, length=%v, advance=%v",
-		shortOffset, shortLength, advance)
+	t.Logf("Lazy match for short match: length=%v, advance=%v",
+		shortLength, advance)
 }
 
 // Test UpdateTables functionality
@@ -367,5 +375,338 @@ func TestHCMatcherUpdateTables(t *testing.T) {
 
 	if !updated {
 		t.Errorf("No hash table entries were updated by UpdateTables")
+	}
+}
+
+// TestHCMatcherLevels tests the HC matcher with different compression levels
+func TestHCMatcherLevels(t *testing.T) {
+	// Test all compression levels to ensure proper behavior
+	for level := CompressionLevel(1); level <= 12; level++ {
+		t.Run("Level-"+string(rune('0'+level)), func(t *testing.T) {
+			// Create HC matcher with this level
+			matcher := NewHCMatcher(level)
+
+			// Check configuration based on level
+			switch {
+			case level <= 3:
+				if matcher.maxAttempts != 4 {
+					t.Errorf("Expected maxAttempts to be 4 for level %d, got %d", level, matcher.maxAttempts)
+				}
+				if matcher.windowSize != 16*1024 {
+					t.Errorf("Expected windowSize to be %d for level %d, got %d", 16*1024, level, matcher.windowSize)
+				}
+				if matcher.useEnhancedHC {
+					t.Errorf("Expected useEnhancedHC to be false for level %d", level)
+				}
+			case level <= 6:
+				if matcher.maxAttempts != 8 {
+					t.Errorf("Expected maxAttempts to be 8 for level %d, got %d", level, matcher.maxAttempts)
+				}
+				if matcher.windowSize != 32*1024 {
+					t.Errorf("Expected windowSize to be %d for level %d, got %d", 32*1024, level, matcher.windowSize)
+				}
+				if matcher.useEnhancedHC {
+					t.Errorf("Expected useEnhancedHC to be false for level %d", level)
+				}
+			case level <= 9:
+				if matcher.maxAttempts != 16 {
+					t.Errorf("Expected maxAttempts to be 16 for level %d, got %d", level, matcher.maxAttempts)
+				}
+				if matcher.windowSize != 64*1024 {
+					t.Errorf("Expected windowSize to be %d for level %d, got %d", 64*1024, level, matcher.windowSize)
+				}
+				if !matcher.useEnhancedHC {
+					t.Errorf("Expected useEnhancedHC to be true for level %d", level)
+				}
+			default: // level > 9
+				if matcher.maxAttempts != 32 {
+					t.Errorf("Expected maxAttempts to be 32 for level %d, got %d", level, matcher.maxAttempts)
+				}
+				if matcher.windowSize != MaxDistance {
+					t.Errorf("Expected windowSize to be %d for level %d, got %d", MaxDistance, level, matcher.windowSize)
+				}
+				if !matcher.useEnhancedHC {
+					t.Errorf("Expected useEnhancedHC to be true for level %d", level)
+				}
+				if matcher.hashLog != HashLogHC {
+					t.Errorf("Expected hashLog to be %d for level %d, got %d", HashLogHC, level, matcher.hashLog)
+				}
+			}
+		})
+	}
+}
+
+// TestHCHash5 tests the 5-byte hash function
+func TestHCHash5(t *testing.T) {
+	// Create test data with a known pattern
+	data := make([]byte, 100)
+	for i := range data {
+		data[i] = byte(i % 256)
+	}
+
+	// Create matcher
+	matcher := NewHCMatcher(12) // Use highest level to ensure 5-byte hash is used
+	matcher.Reset(data)
+
+	// Get hash values at different positions
+	hashes := make(map[uint32]bool)
+	for i := 0; i < len(data)-5; i++ {
+		hash := matcher.hash5(i)
+		hashes[hash] = true
+	}
+
+	// Verify that we get a good distribution of hash values
+	// For 95 positions, we should have a decent number of unique hashes
+	// but fewer than 95 due to the hash function's properties
+	if len(hashes) < 20 || len(hashes) > 95 {
+		t.Errorf("Expected a reasonable number of unique hashes, got %d", len(hashes))
+	}
+
+	// Test hash at end of buffer
+	hash := matcher.hash5(len(data) - 4)
+	if hash != 0 {
+		t.Errorf("Expected hash at end of buffer to be 0, got %d", hash)
+	}
+}
+
+// TestHCMatcherWindowSizes tests the window size behavior
+func TestHCMatcherWindowSizes(t *testing.T) {
+	// Create test data with repeated patterns
+	data := createRepeatedData(1024 * 1024) // 1MB
+
+	// Test with different levels to check window size behavior
+	levels := []CompressionLevel{3, 6, 9, 12}
+	for _, level := range levels {
+		t.Run("Level-"+string(rune('0'+level)), func(t *testing.T) {
+			testHCMatcherWithLevel(t, data, level)
+		})
+	}
+}
+
+// Helper function to test a specific level
+func testHCMatcherWithLevel(t *testing.T, data []byte, level CompressionLevel) {
+	matcher := NewHCMatcher(level)
+	matcher.Reset(data)
+
+	// Initialize hash tables
+	for i := 0; i < 1024; i += 4 {
+		matcher.InsertHash(i)
+	}
+
+	// Get matches at different positions
+	foundMatchCount := 0
+	for i := 1024; i < 1024*5; i += 8 {
+		matcher.pos = i
+		offset, length := matcher.FindBestMatch()
+		if length >= MinMatch {
+			foundMatchCount++
+
+			// Check that offset is within window size
+			if offset > matcher.windowSize {
+				t.Errorf("Match offset %d exceeds window size %d at level %d",
+					offset, matcher.windowSize, level)
+			}
+		}
+	}
+
+	// Make sure we found some matches
+	if foundMatchCount == 0 {
+		t.Errorf("No matches found for level %d", level)
+	}
+}
+
+// TestLazyMatching tests the lazy matching improvements
+func TestLazyMatching(t *testing.T) {
+	// Create test data with repeating patterns and some variations
+	data := createRepeatedData(256 * 1024) // 256KB
+
+	// Test standard vs. enhanced lazy matching
+	levels := []CompressionLevel{6, 12} // Level 6 (standard) vs Level 12 (enhanced)
+
+	for _, level := range levels {
+		t.Run("Level-"+string(rune('0'+level)), func(t *testing.T) {
+			matcher := NewHCMatcher(level)
+			matcher.Reset(data)
+
+			// Initialize hash tables
+			for i := 0; i < 1024; i += 4 {
+				matcher.InsertHash(i)
+			}
+
+			// Test lazy matching
+			lazyUpgrades := 0
+			standardMatches := 0
+
+			for i := 1024; i < 10000; i += 7 {
+				matcher.pos = i
+				offset, length := matcher.FindBestMatch()
+
+				if length >= MinMatch {
+					// Try lazy matching
+					_, newLength, advance := matcher.LazyMatch(offset, length)
+
+					if advance > 1 {
+						lazyUpgrades++
+						// Verify that the new match is better
+						if newLength <= length {
+							t.Errorf("Lazy matching didn't improve match: %d -> %d at level %d",
+								length, newLength, level)
+						}
+					} else {
+						standardMatches++
+					}
+				}
+			}
+
+			// Ensure we have some standard matches and some lazy upgrades
+			if standardMatches == 0 || lazyUpgrades == 0 {
+				t.Errorf("Expected both standard matches and lazy upgrades for level %d, got %d standard, %d lazy",
+					level, standardMatches, lazyUpgrades)
+			}
+
+			// For enhanced HC, check early exit for long matches
+			if matcher.useEnhancedHC {
+				// Create a very long match
+				matcher.pos = 5000
+				longOffset, longLength := 100, 64 // A match better than the early exit threshold
+				_, _, advance := matcher.LazyMatch(longOffset, longLength)
+				if advance != 1 {
+					t.Errorf("Long match (%d bytes) should trigger early exit but didn't for level %d",
+						longLength, level)
+				}
+			}
+		})
+	}
+}
+
+// TestCompressionQuality tests overall compression quality
+func TestCompressionQuality(t *testing.T) {
+	// Generate test data with good compressibility
+	data := createRepeatedData(1024 * 1024) // 1MB
+
+	// Test compression with different levels
+	for level := CompressionLevel(1); level <= 12; level += 3 {
+		// Only test a few levels to save time
+		t.Run("Level-"+string(rune('0'+level)), func(t *testing.T) {
+			compressedV1, err := CompressBlockLevel(data, nil, level)
+			if err != nil {
+				t.Fatalf("CompressBlockLevel error: %v", err)
+			}
+
+			compressedV2, err := CompressBlockV2Level(data, nil, level)
+			if err != nil {
+				t.Fatalf("CompressBlockV2Level error: %v", err)
+			}
+
+			// Verify both compressed outputs
+			decompressedV1, err := DecompressBlock(compressedV1, nil, len(data))
+			if err != nil {
+				t.Fatalf("DecompressBlock error: %v", err)
+			}
+
+			decompressedV2, err := DecompressBlock(compressedV2, nil, len(data))
+			if err != nil {
+				t.Fatalf("DecompressBlock error: %v", err)
+			}
+
+			if !bytes.Equal(data, decompressedV1) || !bytes.Equal(data, decompressedV2) {
+				t.Fatalf("Decompressed data doesn't match original")
+			}
+
+			// For higher levels, V2 should generally give better compression
+			if level >= 9 && len(compressedV2) >= len(compressedV1) {
+				t.Logf("Warning: V2 compression (%d bytes) not better than V1 (%d bytes) at level %d",
+					len(compressedV2), len(compressedV1), level)
+			}
+
+			// Log compression ratios
+			ratioV1 := float64(len(data)) / float64(len(compressedV1))
+			ratioV2 := float64(len(data)) / float64(len(compressedV2))
+			t.Logf("Level %d: V1 ratio: %.2fx, V2 ratio: %.2fx", level, ratioV1, ratioV2)
+		})
+	}
+}
+
+// Helper function to create test data with repeated patterns
+func createRepeatedData(size int) []byte {
+	rand.Seed(time.Now().UnixNano())
+	data := make([]byte, size)
+
+	// Create several patterns
+	patternCount := 5
+	patterns := make([][]byte, patternCount)
+	for i := 0; i < patternCount; i++ {
+		patterns[i] = make([]byte, 128)
+		for j := 0; j < 128; j++ {
+			patterns[i][j] = byte(rand.Intn(256))
+		}
+	}
+
+	// Fill data with patterns
+	pos := 0
+	for pos < size {
+		// Pick a random pattern
+		pattern := patterns[rand.Intn(patternCount)]
+
+		// Determine length of this pattern (with some variation)
+		repeatCount := rand.Intn(64) + 1
+		for i := 0; i < repeatCount && pos < size; i++ {
+			// Copy the pattern
+			copyLen := min(len(pattern), size-pos)
+			copy(data[pos:], pattern[:copyLen])
+
+			// Maybe modify a few bytes to create some variations
+			if rand.Float32() < 0.2 {
+				// Modify 1-3 bytes
+				modCount := rand.Intn(3) + 1
+				for j := 0; j < modCount && pos+j < size; j++ {
+					modPos := pos + rand.Intn(copyLen)
+					if modPos < size {
+						data[modPos] = byte(rand.Intn(256))
+					}
+				}
+			}
+
+			pos += copyLen
+		}
+	}
+
+	return data
+}
+
+// BenchmarkHCMatcher benchmarks the matcher with different levels
+func BenchmarkHCMatcher(b *testing.B) {
+	// Create test data
+	data := createRepeatedData(1024 * 1024) // 1MB
+
+	// Test all compression levels
+	for level := CompressionLevel(1); level <= 12; level++ {
+		b.Run("Level-"+string(rune('0'+level)), func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				// Create a new matcher for each iteration to ensure fair comparison
+				matcher := NewHCMatcher(level)
+				matcher.Reset(data)
+
+				// Find matches throughout the data
+				matches := 0
+				pos := 0
+				for pos < len(data)-MinMatch {
+					matcher.pos = pos
+					_, length := matcher.FindBestMatch()
+					if length >= MinMatch {
+						matches++
+						pos += length
+					} else {
+						pos++
+					}
+				}
+
+				// Use matches to prevent compiler optimization
+				if matches == 0 {
+					b.Fatalf("No matches found in test data for level %d", level)
+				}
+			}
+		})
 	}
 }

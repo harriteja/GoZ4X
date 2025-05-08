@@ -34,7 +34,7 @@ type Dispatcher struct {
 
 	// Dispatcher state
 	running   bool
-	runningMu sync.Mutex
+	runningMu sync.RWMutex
 
 	// Stats
 	totalJobs   int
@@ -47,6 +47,7 @@ type compressionJob struct {
 	id       int
 	input    []byte
 	level    int
+	useV2    bool
 	resultCh chan<- compressionResult
 }
 
@@ -68,12 +69,14 @@ func NewDispatcher(numWorkers, chunkSize int) *Dispatcher {
 		chunkSize = DefaultChunkSize
 	}
 
-	return &Dispatcher{
+	d := &Dispatcher{
 		numWorkers: numWorkers,
 		chunkSize:  chunkSize,
 		jobChan:    make(chan compressionJob, numWorkers*2),
 		resultChan: make(chan compressionResult, numWorkers*2),
 	}
+
+	return d
 }
 
 // Start launches worker goroutines
@@ -115,9 +118,9 @@ func (d *Dispatcher) Stop() {
 	// Wait for all workers to finish
 	d.wg.Wait()
 
-	// Close result channel
-	close(d.resultChan)
-
+	// Create a new set of channels
+	d.jobChan = make(chan compressionJob, d.numWorkers*2)
+	d.resultChan = make(chan compressionResult, d.numWorkers*2)
 	d.running = false
 }
 
@@ -140,8 +143,17 @@ func (d *Dispatcher) compressBlock(job compressionJob) compressionResult {
 	maxSize := len(job.input) + (len(job.input) / 255) + 16
 	compressedBuf := make([]byte, maxSize)
 
-	// Use the CompressBlockLevel function from the compress package
-	compressed, err := compress.CompressBlockLevel(job.input, compressedBuf, compress.CompressionLevel(job.level))
+	var compressed []byte
+	var err error
+
+	// Use the appropriate compression function based on useV2 flag
+	if job.useV2 {
+		// Use V2 algorithm
+		compressed, err = compress.CompressBlockV2Level(job.input, compressedBuf, compress.CompressionLevel(job.level))
+	} else {
+		// Use standard algorithm
+		compressed, err = compress.CompressBlockLevel(job.input, compressedBuf, compress.CompressionLevel(job.level))
+	}
 
 	return compressionResult{
 		id:        job.id,
@@ -153,23 +165,57 @@ func (d *Dispatcher) compressBlock(job compressionJob) compressionResult {
 
 // CompressBlocks compresses multiple blocks in parallel
 func (d *Dispatcher) CompressBlocks(input []byte, level int) ([]byte, error) {
-	d.runningMu.Lock()
-	if !d.running {
-		if err := d.Start(); err != nil {
-			d.runningMu.Unlock()
-			return nil, err
-		}
+	return d.compressBlocksInternal(input, level, false)
+}
+
+// CompressBlocksV2 compresses multiple blocks in parallel using the V2 algorithm
+func (d *Dispatcher) CompressBlocksV2(input []byte, level int) ([]byte, error) {
+	return d.compressBlocksInternal(input, level, true)
+}
+
+// compressBlocksInternal is the shared implementation for CompressBlocks and CompressBlocksV2
+func (d *Dispatcher) compressBlocksInternal(input []byte, level int, useV2 bool) ([]byte, error) {
+	// Guard against empty input
+	if len(input) == 0 {
+		return []byte{}, nil
 	}
-	d.runningMu.Unlock()
+
+	// For very small inputs or single chunk compression, just do direct compression
+	if len(input) <= d.chunkSize || len(input) < 4096 {
+		// Use standard compression directly for small inputs
+		if useV2 {
+			return compress.CompressBlockV2Level(input, nil, compress.CompressionLevel(level))
+		}
+		return compress.CompressBlockLevel(input, nil, compress.CompressionLevel(level))
+	}
+
+	// Check if we need to start the dispatcher
+	d.runningMu.RLock()
+	running := d.running
+	d.runningMu.RUnlock()
+
+	if !running {
+		// Need to start the dispatcher
+		d.runningMu.Lock()
+		// Check again after acquiring the exclusive lock
+		if !d.running {
+			if err := d.Start(); err != nil {
+				d.runningMu.Unlock()
+				// If we can't start the dispatcher, do single-threaded compression
+				if useV2 {
+					return compress.CompressBlockV2Level(input, nil, compress.CompressionLevel(level))
+				}
+				return compress.CompressBlockLevel(input, nil, compress.CompressionLevel(level))
+			}
+		}
+		d.runningMu.Unlock()
+	}
 
 	// Split input into chunks
 	numChunks := (len(input) + d.chunkSize - 1) / d.chunkSize
 	results := make([]compressionResult, numChunks)
 
-	// Create result channel
-	resultCh := make(chan compressionResult, numChunks)
-
-	// Submit compression jobs
+	// Process all chunks synchronously for consistency
 	for i := 0; i < numChunks; i++ {
 		start := i * d.chunkSize
 		end := (i + 1) * d.chunkSize
@@ -177,34 +223,21 @@ func (d *Dispatcher) CompressBlocks(input []byte, level int) ([]byte, error) {
 			end = len(input)
 		}
 
-		// Submit job
-		d.jobChan <- compressionJob{
+		job := compressionJob{
 			id:       i,
 			input:    input[start:end],
 			level:    level,
-			resultCh: resultCh,
+			useV2:    useV2,
+			resultCh: nil, // Not needed for synchronous processing
 		}
 
-		d.totalJobs++
-		d.runningJobs++
-	}
+		// Process directly
+		result := d.compressBlock(job)
+		results[i] = result
 
-	// Collect results
-	var err error
-	for i := 0; i < numChunks; i++ {
-		result := <-resultCh
-		results[result.id] = result
-
-		if result.err != nil && err == nil {
-			err = result.err
+		if result.err != nil {
+			return nil, result.err
 		}
-
-		d.runningJobs--
-	}
-
-	// If any error occurred, return it
-	if err != nil {
-		return nil, err
 	}
 
 	// Combine results
