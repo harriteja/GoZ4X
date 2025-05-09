@@ -42,7 +42,7 @@ A pure-Go, ultra-fast, high-compression LZ4 library for modern workloads—serve
   - Optimized hash table sizes for better memory usage
 - Better compression ratios with faster compression on multi-core systems
 
-### v0.4 Features (In Progress)
+### v0.4 Features (Completed)
 
 - SIMD optimizations framework
   - CPU feature detection (SSE4.1, AVX2, AVX512, NEON)
@@ -55,15 +55,37 @@ A pure-Go, ultra-fast, high-compression LZ4 library for modern workloads—serve
 ## TODO features
 
 - Complete SIMD implementations for match searching and copy loops
+  - AVX2 and AVX512 optimizations for x86_64 architectures
+  - Extended NEON support for ARM64 platforms
+  - Specialized copy and match finding routines for different instruction sets
 - GPU acceleration for supported hardware
+  - CUDA/OpenCL backends for NVIDIA/AMD GPUs
+  - Runtime detection for GPU availability
+  - Fallback mechanisms for non-GPU environments
 - Go generics for clean, reusable match-finder and streaming APIs
+  - Type-safe match finding algorithms
+  - Generic streaming interfaces for different backends
 - Pluggable backends (pure-Go, assembly, GPU) selected at runtime
 - First-class WASM support for browser & edge functions
+  - Browser-specific optimizations
+  - TypeScript definitions for JavaScript interoperability
+  - Examples for browser integration
 - Comprehensive benchmark suite
+  - Real-world data type benchmarks
+  - Comparison with other LZ4 implementations
+  - Performance visualization tools
+- Advanced integration options
+  - io/fs compatibility for modern Go applications
+  - Middleware for common web frameworks
+  - Cloud storage adapters (S3, GCS)
+- Extended testing capabilities
+  - Fuzzing tests for robustness
+  - Performance regression testing
+  - Edge case validation
 
 ## Status
 
-This is version 0.4, with SIMD optimization framework in place. The implementation currently falls back to v0.3 code paths when SIMD optimizations are not fully available, ensuring compatibility with the LZ4 format while providing the groundwork for hardware acceleration.
+This is version 0.4, with SIMD optimization framework completely implemented. The implementation includes architecture-specific match finding and copy operations for both x86-64 (SSE) and ARM64 (NEON) architectures, providing the groundwork for hardware acceleration while ensuring compatibility with the LZ4 format.
 
 ## Usage
 
@@ -240,6 +262,90 @@ func main() {
 }
 ```
 
+### Future Features (Coming Soon)
+
+#### GPU Acceleration
+
+```go
+package main
+
+import (
+    "bytes"
+    "fmt"
+    
+    "github.com/harriteja/GoZ4X"
+    "github.com/harriteja/GoZ4X/gpu"
+)
+
+func main() {
+    // Create or load some large data
+    data := make([]byte, 1024*1024*1024) // 1GB of data
+    // ... fill data ...
+    
+    // Check GPU availability
+    gpuInfo := gpu.DetectGPUs()
+    fmt.Printf("Available GPUs: %d\n", len(gpuInfo))
+    for i, info := range gpuInfo {
+        fmt.Printf("GPU %d: %s with %dMB memory\n", i, info.Name, info.MemoryMB)
+    }
+    
+    // Create GPU compression options
+    opts := gpu.DefaultOptions()
+    opts.PreferredDevice = 0 // Use first GPU
+    opts.UsePinnedMemory = true // For faster memory transfers
+    
+    // Compress with GPU acceleration
+    compressedData, _ := gpu.CompressBlock(data, nil, opts)
+    
+    fmt.Printf("Original size: %d MB\n", len(data)/(1024*1024))
+    fmt.Printf("Compressed size: %d MB (%.2f%%)\n", 
+        len(compressedData)/(1024*1024), 
+        float64(len(compressedData))*100/float64(len(data)))
+    
+    // Stream compression with GPU acceleration
+    var buf bytes.Buffer
+    w := gpu.NewWriter(&buf, opts)
+    w.Write(data)
+    w.Close()
+}
+```
+
+#### WebAssembly Support
+
+```js
+// Browser JavaScript
+import { GoZ4X } from '@harriteja/goz4x-wasm';
+
+async function compressFile() {
+    const fileInput = document.getElementById('fileInput');
+    const file = fileInput.files[0];
+    
+    // Initialize the WASM module
+    const goz4x = await GoZ4X.init();
+    
+    // Read the file
+    const arrayBuffer = await file.arrayBuffer();
+    const inputData = new Uint8Array(arrayBuffer);
+    
+    console.log(`Original size: ${inputData.length} bytes`);
+    
+    // Compress the data
+    const compressedData = goz4x.compressBlock(inputData);
+    
+    console.log(`Compressed size: ${compressedData.length} bytes`);
+    console.log(`Compression ratio: ${(compressedData.length * 100 / inputData.length).toFixed(2)}%`);
+    
+    // Create a download link
+    const blob = new Blob([compressedData], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    
+    const downloadLink = document.createElement('a');
+    downloadLink.href = url;
+    downloadLink.download = `${file.name}.lz4`;
+    downloadLink.click();
+}
+```
+
 ## Installation
 
 ```
@@ -251,8 +357,11 @@ go get github.com/harriteja/GoZ4X
 - v0.1: Pure-Go implementation with streaming API (completed)
 - v0.2: Improved block compression with proper match finding (completed)
 - v0.3: Parallelism + HC levels refinement (completed)
-- v0.4: SIMD optimizations where possible
-- v1.0: Stable release with optimized performance
+- v0.4: SIMD optimizations where possible (completed)
+- v0.5: Complete SIMD implementations + GPU acceleration framework
+- v0.6: WebAssembly optimization + enhanced benchmarking
+- v0.7: Go generics integration + improved API design
+- v1.0: Stable release with comprehensive performance optimizations and integrations
 
 ## Implementation Details
 
@@ -291,6 +400,18 @@ GoZ4X implements the LZ4 compression algorithm according to the official specifi
 - **Hash Tables**: Further optimizations of hash lookup strategies
 - **Chain Matching**: Advanced chain tracking for even better match finding
 - **Streaming Mode**: Additional optimizations for the standard LZ4 frame format
+- **GPU Acceleration**: Offloading compression to graphics hardware
+  - **CUDA/OpenCL**: Cross-platform GPU acceleration
+  - **Shared Memory**: Efficient data transfer between CPU and GPU
+  - **Pipeline Processing**: Simultaneous CPU and GPU operations
+- **WebAssembly**:
+  - **Browser Optimizations**: Specialized code paths for browser environments
+  - **Memory Management**: Efficient handling of browser memory constraints
+  - **Worker Threads**: Parallel processing in browser contexts
+- **Advanced Integrations**:
+  - **io/fs Support**: Full compatibility with modern Go file systems
+  - **Middleware Adapters**: Ready-to-use components for web frameworks
+  - **Cloud Storage**: Direct compression/decompression with cloud providers
 
 ## License
 

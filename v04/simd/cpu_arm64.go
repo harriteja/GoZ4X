@@ -3,9 +3,8 @@
 
 package simd
 
-// detectCPUFeaturesImpl is the architecture-specific implementation
-// of CPU feature detection for ARM64
+// detectCPUFeaturesImpl provides ARM64 specific CPU feature detection
 func detectCPUFeaturesImpl() {
-	// All ARM64 platforms have NEON, already set in the main detection
+	// ARM64 always has NEON, so we enable it unconditionally
 	hasNEON = true
 }

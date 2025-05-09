@@ -3,8 +3,8 @@
 
 package simd
 
-// detectCPUFeaturesImpl is a fallback implementation
-// for unsupported architectures
+// detectCPUFeaturesImpl is a no-op implementation for unsupported architectures
 func detectCPUFeaturesImpl() {
-	// No SIMD features on unsupported platforms
+	// No SIMD features are detected on unsupported architectures
+	// All flags remain at their default values (false)
 }

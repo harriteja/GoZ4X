@@ -6,6 +6,12 @@ import (
 	"sync"
 )
 
+// Match represents a found match during compression
+type Match struct {
+	Offset int // Offset from current position
+	Length int // Length of the match
+}
+
 // CPU architecture and feature detection
 var (
 	// Architecture flags

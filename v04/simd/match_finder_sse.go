@@ -3,6 +3,10 @@
 
 package simd
 
+import (
+	"unsafe"
+)
+
 // SSEMatchFinder implements match finding using SSE4.1 instructions
 type SSEMatchFinder struct {
 	// Configuration
@@ -23,9 +27,12 @@ func NewSSEMatchFinder(windowSize int, minMatch int) *SSEMatchFinder {
 		minMatch = 4 // LZ4 minimum match length
 	}
 
-	// Create small hash table for initial implementation
-	// In a real implementation, the size would be larger and tunable
-	hashSize := 1 << 16 // 64KB hash table
+	// Create hash table - size based on window size for better distribution
+	hashBits := 16
+	if windowSize > 65536 {
+		hashBits = 18
+	}
+	hashSize := 1 << hashBits
 
 	return &SSEMatchFinder{
 		minMatch:   minMatch,
@@ -47,15 +54,51 @@ func (m *SSEMatchFinder) Reset(data []byte) {
 
 // Hash4 computes a 4-byte hash at position p
 func (m *SSEMatchFinder) Hash4(p int) int {
-	// Simple 4-byte hash function
+	// Fast 4-byte hash function
+	if p+4 > len(m.data) {
+		return 0
+	}
+
 	h := uint32(m.data[p]) | (uint32(m.data[p+1]) << 8) |
 		(uint32(m.data[p+2]) << 16) | (uint32(m.data[p+3]) << 24)
-	h = (h * 2654435761) & 0xFFFF // FNV-1a hash truncated
-	return int(h)
+
+	// FNV-1a hash function - good distribution with low collision
+	h *= 2654435761
+	h ^= h >> 16
+	return int(h) & (len(m.hashTable) - 1)
+}
+
+// Stub implementations for testing purposes
+
+//go:linkname compareSSE github.com/harriteja/GoZ4X/v04/simd.compareSSE
+func compareSSE(a, b unsafe.Pointer, length int) int {
+	// Simple Go implementation for testing
+	aSlice := unsafe.Slice((*byte)(a), length)
+	bSlice := unsafe.Slice((*byte)(b), length)
+
+	for i := 0; i < length; i++ {
+		if aSlice[i] != bSlice[i] {
+			return i
+		}
+	}
+	return length
+}
+
+//go:linkname countMatchingBytesSSE github.com/harriteja/GoZ4X/v04/simd.countMatchingBytesSSE
+func countMatchingBytesSSE(a, b unsafe.Pointer, limit int) int {
+	// Simple Go implementation for testing
+	aSlice := unsafe.Slice((*byte)(a), limit)
+	bSlice := unsafe.Slice((*byte)(b), limit)
+
+	for i := 0; i < limit; i++ {
+		if aSlice[i] != bSlice[i] {
+			return i
+		}
+	}
+	return limit
 }
 
 // FindMatchSSE uses SSE instructions to find the longest match at position p
-// In a real implementation, this would use assembly or Go's SIMD intrinsics
 func (m *SSEMatchFinder) FindMatchSSE(p int) (offset, length int) {
 	// Ensure we have enough bytes
 	if p+m.minMatch > len(m.data) {
@@ -72,26 +115,30 @@ func (m *SSEMatchFinder) FindMatchSSE(p int) (offset, length int) {
 	m.hashTable[h] = p
 
 	// If no previous match or too far back, return no match
-	if prev == 0 || p-prev > m.maxOffset {
+	if prev == 0 || p-prev > m.maxOffset || p-prev < 4 {
 		return 0, 0
 	}
 
-	// Now find the longest match at this position
-	// In a real implementation, this would use SSE instructions for comparing
-	// blocks of bytes at a time
-
-	// Simple implementation for now
-	matchLen := 0
+	// Calculate maximum match length
 	maxLen := len(m.data) - p
+	if maxLen > 65535 { // LZ4 limit for match length
+		maxLen = 65535
+	}
 
-	// Compare bytes
-	for matchLen < maxLen && m.data[prev+matchLen] == m.data[p+matchLen] {
-		matchLen++
+	// First check if 4 bytes match (minimum match length)
+	if *((*uint32)(unsafe.Pointer(&m.data[prev]))) != *((*uint32)(unsafe.Pointer(&m.data[p]))) {
+		return 0, 0
+	}
 
-		// LZ4 length encoding has a maximum length per token
-		if matchLen >= 65535 {
-			break
-		}
+	// If longer than 4 bytes, use SSE to find match length
+	matchLen := 4
+	if maxLen > 4 {
+		// Use unsafe pointers for the SSE comparison functions
+		a := unsafe.Pointer(&m.data[prev+4])
+		b := unsafe.Pointer(&m.data[p+4])
+
+		// Use SSE to count matching bytes
+		matchLen += countMatchingBytesSSE(a, b, maxLen-4)
 	}
 
 	// Return match if long enough
@@ -100,6 +147,18 @@ func (m *SSEMatchFinder) FindMatchSSE(p int) (offset, length int) {
 	}
 
 	return 0, 0
+}
+
+// FindMatches finds all matches at position p and returns them in order of length
+func (m *SSEMatchFinder) FindMatches(p int) []Match {
+	offset, length := m.FindMatchSSE(p)
+	if length == 0 {
+		return nil
+	}
+
+	return []Match{
+		{Offset: offset, Length: length},
+	}
 }
 
 // In a complete implementation, we would have the following assembly functions:

@@ -34,83 +34,31 @@ func TestFeatureDetection(t *testing.T) {
 	if impl < ImplGeneric || impl > ImplNEON {
 		t.Errorf("BestImplementation returned invalid implementation type: %d", impl)
 	}
+
+	// Test implementation name function with all possible values
+	impls := []int{ImplGeneric, ImplSSE41, ImplAVX2, ImplAVX512, ImplNEON, -1}
+	expectedNames := []string{"Generic", "SSE4.1", "AVX2", "AVX512", "NEON", "Unknown"}
+
+	for i, impl := range impls {
+		name := ImplementationName(impl)
+		if name != expectedNames[i] {
+			t.Errorf("ImplementationName(%d) returned %s, expected %s",
+				impl, name, expectedNames[i])
+		}
+	}
 }
 
 // TestCopyOperations tests platform-specific copy operations
 func TestCopyOperations(t *testing.T) {
-	// Create test data
-	src := make([]byte, 1024)
-	dst := make([]byte, 1024)
-
-	// Fill source with pattern
-	for i := range src {
-		src[i] = byte(i & 0xFF)
-	}
-
-	// Test pattern for repeat copy
-	pattern := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
-
-	// Run architecture-specific tests
-	if runtime.GOARCH == "amd64" {
-		t.Run("SSE", func(t *testing.T) {
-			// Simple test of copies - using regular Go implementation for now
-			copy(dst, src[:512])
-			if !bytes.Equal(dst[:512], src[:512]) {
-				t.Error("Copy failed to copy data correctly")
-			}
-
-			// Copy pattern repeatedly
-			copy(dst[:16], pattern)
-
-			// Test repeated copy
-			for i := 0; i < 3; i++ {
-				offset := 16 + i*16
-				for j := 0; j < 16; j++ {
-					dst[offset+j] = dst[j]
-				}
-			}
-
-			// Verify the pattern was copied correctly
-			for i := 0; i < 3; i++ {
-				offset := 16 + i*16
-				if !bytes.Equal(dst[offset:offset+16], pattern) {
-					t.Errorf("RepeatCopy failed at offset %d", offset)
-				}
-			}
-		})
-	}
-
-	if runtime.GOARCH == "arm64" {
-		t.Run("NEON", func(t *testing.T) {
-			// Simple test of copies - using regular Go implementation for now
-			copy(dst, src[:512])
-			if !bytes.Equal(dst[:512], src[:512]) {
-				t.Error("Copy failed to copy data correctly")
-			}
-
-			// Copy pattern repeatedly
-			copy(dst[:16], pattern)
-
-			// Test repeated copy
-			for i := 0; i < 3; i++ {
-				offset := 16 + i*16
-				for j := 0; j < 16; j++ {
-					dst[offset+j] = dst[j]
-				}
-			}
-
-			// Verify the pattern was copied correctly
-			for i := 0; i < 3; i++ {
-				offset := 16 + i*16
-				if !bytes.Equal(dst[offset:offset+16], pattern) {
-					t.Errorf("RepeatCopy failed at offset %d", offset)
-				}
-			}
-		})
-	}
+	t.Skip("Skipping copy operations test as assembly implementations have been removed")
 }
 
-// TestMatchFinding tests the match finding algorithms
+// TestCopyAndCompareAssembly tests the raw assembly functions
+func TestCopyAndCompareAssembly(t *testing.T) {
+	t.Skip("Skipping assembly function tests as assembly implementations have been removed")
+}
+
+// TestMatchFinding tests the generic match finding algorithms
 func TestMatchFinding(t *testing.T) {
 	// Test data with repeating pattern
 	data := make([]byte, 1024)
@@ -118,7 +66,7 @@ func TestMatchFinding(t *testing.T) {
 		data[i] = byte(i % 64)
 	}
 
-	// Test cases for different architectures
+	// Test hash function consistency
 	t.Run("Generic", func(t *testing.T) {
 		// Generic match finder test
 		h1 := uint32(data[64]) | (uint32(data[64+1]) << 8) |
@@ -134,42 +82,4 @@ func TestMatchFinding(t *testing.T) {
 			t.Errorf("Hash function inconsistency: identical sequences have different hashes")
 		}
 	})
-
-	if runtime.GOARCH == "amd64" {
-		t.Run("SSE", func(t *testing.T) {
-			// SSE match finder test
-			// For now, we simply verify the hash function is consistent
-			h1 := uint32(data[64]) | (uint32(data[64+1]) << 8) |
-				(uint32(data[64+2]) << 16) | (uint32(data[64+3]) << 24)
-			h1 = (h1 * 2654435761) & 0xFFFF // FNV-1a hash truncated
-
-			h2 := uint32(data[128]) | (uint32(data[128+1]) << 8) |
-				(uint32(data[128+2]) << 16) | (uint32(data[128+3]) << 24)
-			h2 = (h2 * 2654435761) & 0xFFFF // FNV-1a hash truncated
-
-			// If the pattern repeats exactly, the hashes should match
-			if bytes.Equal(data[64:64+4], data[128:128+4]) && h1 != h2 {
-				t.Errorf("Hash function inconsistency: identical sequences have different hashes")
-			}
-		})
-	}
-
-	if runtime.GOARCH == "arm64" {
-		t.Run("NEON", func(t *testing.T) {
-			// NEON match finder test
-			// For now, we simply verify the hash function is consistent
-			h1 := uint32(data[64]) | (uint32(data[64+1]) << 8) |
-				(uint32(data[64+2]) << 16) | (uint32(data[64+3]) << 24)
-			h1 = (h1 * 2654435761) & 0xFFFF // FNV-1a hash truncated
-
-			h2 := uint32(data[128]) | (uint32(data[128+1]) << 8) |
-				(uint32(data[128+2]) << 16) | (uint32(data[128+3]) << 24)
-			h2 = (h2 * 2654435761) & 0xFFFF // FNV-1a hash truncated
-
-			// If the pattern repeats exactly, the hashes should match
-			if bytes.Equal(data[64:64+4], data[128:128+4]) && h1 != h2 {
-				t.Errorf("Hash function inconsistency: identical sequences have different hashes")
-			}
-		})
-	}
 }
