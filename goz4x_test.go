@@ -629,16 +629,16 @@ func TestV2VsV1CompressionRatio(t *testing.T) {
 
 // TestVersion verifies the version constants
 func TestVersion(t *testing.T) {
-	if Version != "0.3.0" {
-		t.Errorf("Expected version to be 0.3.0, got %s", Version)
+	if Version != "0.4.0" {
+		t.Errorf("Expected version to be 0.4.0, got %s", Version)
 	}
 
 	if VersionMajor != 0 {
 		t.Errorf("Expected VersionMajor to be 0, got %d", VersionMajor)
 	}
 
-	if VersionMinor != 3 {
-		t.Errorf("Expected VersionMinor to be 3, got %d", VersionMinor)
+	if VersionMinor != 4 {
+		t.Errorf("Expected VersionMinor to be 4, got %d", VersionMinor)
 	}
 
 	if VersionPatch != 0 {

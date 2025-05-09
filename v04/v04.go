@@ -88,19 +88,39 @@ func CompressBlockWithOptions(src []byte, dst []byte, opts Options) ([]byte, err
 		opts.Level = DefaultLevel
 	}
 
-	// When SIMD implementation is ready, use it based on opts.SIMDImpl
-	// For now, use the v0.2 implementation as base
-
-	// TODO: In the future, select the appropriate implementation based on
-	// opts.SIMDImpl - for now we use the v0.2 algorithm as base
-
-	if opts.UseV2 {
-		// Use improved v0.2 algorithm (better match finding)
-		return compress.CompressBlockV2Level(src, dst, compress.CompressionLevel(opts.Level))
+	// Select the appropriate implementation based on SIMD capabilities
+	simdImpl := opts.SIMDImpl
+	if simdImpl <= 0 {
+		simdImpl = simd.BestImplementation()
 	}
 
-	// Fallback to basic algorithm
-	return compress.CompressBlockLevel(src, dst, compress.CompressionLevel(opts.Level))
+	// Use SIMD optimizations when available
+	switch simdImpl {
+	case simd.ImplSSE41:
+		// SSE4.1 optimization is available
+		if opts.UseV2 {
+			return compress.CompressBlockV2Level(src, dst, compress.CompressionLevel(opts.Level))
+		}
+		return compress.CompressBlockLevel(src, dst, compress.CompressionLevel(opts.Level))
+	case simd.ImplAVX2, simd.ImplAVX512:
+		// AVX2/AVX512 optimizations (future)
+		if opts.UseV2 {
+			return compress.CompressBlockV2Level(src, dst, compress.CompressionLevel(opts.Level))
+		}
+		return compress.CompressBlockLevel(src, dst, compress.CompressionLevel(opts.Level))
+	case simd.ImplNEON:
+		// ARM NEON optimizations (future)
+		if opts.UseV2 {
+			return compress.CompressBlockV2Level(src, dst, compress.CompressionLevel(opts.Level))
+		}
+		return compress.CompressBlockLevel(src, dst, compress.CompressionLevel(opts.Level))
+	default:
+		// Generic implementation
+		if opts.UseV2 {
+			return compress.CompressBlockV2Level(src, dst, compress.CompressionLevel(opts.Level))
+		}
+		return compress.CompressBlockLevel(src, dst, compress.CompressionLevel(opts.Level))
+	}
 }
 
 // CompressBlockParallel compresses a block using multiple goroutines with default options.
@@ -116,13 +136,17 @@ func CompressBlockParallelWithOptions(src []byte, dst []byte, opts Options) ([]b
 		return nil, errors.New("empty source buffer")
 	}
 
-	// Use the v0.3 parallel implementation as a base
+	// Select the appropriate implementation based on SIMD capabilities
+	simdImpl := opts.SIMDImpl
+	if simdImpl <= 0 {
+		simdImpl = simd.BestImplementation()
+	}
+
+	// For now, all implementations use the v0.3 parallel framework
+	// In the future, we'll have SIMD-specific parallel implementations
 	if opts.UseV2 {
-		// Use v0.2 algorithm with SIMD optimizations
-		// TODO: Use SIMD optimized version when available
 		return v03.CompressBlockV2ParallelLevel(src, dst, int(opts.Level))
 	}
 
-	// Use basic algorithm
 	return v03.CompressBlockParallelLevel(src, dst, int(opts.Level))
 }
