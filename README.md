@@ -42,17 +42,28 @@ A pure-Go, ultra-fast, high-compression LZ4 library for modern workloads—serve
   - Optimized hash table sizes for better memory usage
 - Better compression ratios with faster compression on multi-core systems
 
+### v0.4 Features (In Progress)
+
+- SIMD optimizations framework
+  - CPU feature detection (SSE4.1, AVX2, AVX512, NEON)
+  - Architecture-specific optimizations selection at runtime
+  - Improved performance on supported hardware
+- Compatibility with all previous versions
+- Foundation for hardware-accelerated compression
+- Initial implementation of SIMD-based match finding and copy operations
+
 ## TODO features
 
+- Complete SIMD implementations for match searching and copy loops
+- GPU acceleration for supported hardware
 - Go generics for clean, reusable match-finder and streaming APIs
-- SIMD/assembly for match searching and copy loops (SSE4.1, AVX2, NEON)
 - Pluggable backends (pure-Go, assembly, GPU) selected at runtime
 - First-class WASM support for browser & edge functions
 - Comprehensive benchmark suite
 
 ## Status
 
-This is version 0.3, with parallel compression capabilities and refined Hash Chain levels. The v0.3 implementation significantly improves compression performance on multi-core systems while maintaining compatibility with the LZ4 format.
+This is version 0.4, with SIMD optimization framework in place. The implementation currently falls back to v0.3 code paths when SIMD optimizations are not fully available, ensuring compatibility with the LZ4 format while providing the groundwork for hardware acceleration.
 
 ## Usage
 
@@ -174,6 +185,56 @@ func main() {
     // Decompress (standard decompression works with parallel-compressed data)
     r := goz4x.NewReader(bytes.NewReader(buf.Bytes()))
     decompressed, _ := io.ReadAll(r)
+    
+    fmt.Printf("Decompressed size: %d bytes\n", len(decompressed))
+}
+```
+
+### SIMD-Optimized Compression with v0.4
+
+```go
+package main
+
+import (
+    "bytes"
+    "fmt"
+    "io"
+    "runtime"
+    
+    "github.com/harriteja/GoZ4X"
+    "github.com/harriteja/GoZ4X/v04"
+    "github.com/harriteja/GoZ4X/v04/simd"
+)
+
+func main() {
+    // Create or load data
+    data := make([]byte, 10*1024*1024) // 10MB of data
+    // ... fill data with actual content ...
+    
+    // Check available CPU features
+    features := simd.DetectFeatures()
+    fmt.Printf("CPU Features: SSE4.1=%v, AVX2=%v, AVX512=%v, NEON=%v\n",
+        features.HasSSE41, features.HasAVX2, features.HasAVX512, features.HasNEON)
+    
+    // Create custom compression options
+    opts := v04.DefaultOptions()
+    opts.Level = v04.CompressionLevel(9) // Higher compression level
+    
+    // Compress with SIMD optimizations where available
+    compressedData, _ := v04.CompressBlockWithOptions(data, nil, opts)
+    
+    fmt.Printf("Original size: %d bytes\n", len(data))
+    fmt.Printf("Compressed size: %d bytes (%.2f%%)\n", 
+        len(compressedData), float64(len(compressedData))*100/float64(len(data)))
+    
+    // Parallel SIMD-optimized compression for large data
+    opts.NumWorkers = runtime.NumCPU()
+    parallelCompressed, _ := v04.CompressBlockParallelWithOptions(data, nil, opts)
+    
+    fmt.Printf("Parallel compressed size: %d bytes\n", len(parallelCompressed))
+    
+    // Decompress (standard decompression works with SIMD-compressed data)
+    decompressed, _ := goz4x.DecompressBlock(compressedData, nil, len(data))
     
     fmt.Printf("Decompressed size: %d bytes\n", len(decompressed))
 }

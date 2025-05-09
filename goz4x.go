@@ -6,16 +6,17 @@ import (
 
 	"github.com/harriteja/GoZ4X/compress"
 	v03 "github.com/harriteja/GoZ4X/v03"
+	v04 "github.com/harriteja/GoZ4X/v04"
 )
 
 // Version constants
 const (
 	// Version of the library
-	Version = "0.3.0"
+	Version = "0.4.0"
 	// VersionMajor is the major version number
 	VersionMajor = 0
 	// VersionMinor is the minor version number
-	VersionMinor = 3
+	VersionMinor = 4
 	// VersionPatch is the patch version number
 	VersionPatch = 0
 )
@@ -79,6 +80,26 @@ func CompressBlockV2Parallel(src []byte, dst []byte) ([]byte, error) {
 // This provides better compression ratio and better performance on multicore systems.
 func CompressBlockV2ParallelLevel(src []byte, dst []byte, level int) ([]byte, error) {
 	return v03.CompressBlockV2ParallelLevel(src, dst, level)
+}
+
+// V4 API functions with SIMD optimizations
+
+// CompressBlockV4 compresses a byte slice using the v0.4 algorithm with SIMD optimizations.
+// This provides better performance on modern CPUs with SIMD instruction sets.
+func CompressBlockV4(src []byte, dst []byte) ([]byte, error) {
+	return v04.CompressBlock(src, dst)
+}
+
+// CompressBlockV4Level compresses a byte slice with the v0.4 algorithm and specified level.
+// It uses SIMD instructions where possible for better performance.
+func CompressBlockV4Level(src []byte, dst []byte, level int) ([]byte, error) {
+	return v04.CompressBlockLevel(src, dst, level)
+}
+
+// CompressBlockV4Parallel compresses a byte slice using v0.4 algorithm with multiple goroutines.
+// This provides both SIMD acceleration and parallelism for maximum performance.
+func CompressBlockV4Parallel(src []byte, dst []byte) ([]byte, error) {
+	return v04.CompressBlockParallel(src, dst)
 }
 
 // Reader is an io.Reader that decompresses data from an LZ4 stream.
